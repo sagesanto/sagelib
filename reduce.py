@@ -1,0 +1,258 @@
+import sys
+import warnings
+from astropy import wcs, utils
+import os
+import glob
+from pathlib import Path
+from astropy.io import fits
+import numpy as np
+import configparser
+import argparse
+import pandas as pd
+from astropy.nddata import CCDData
+import sys
+import six
+sys.modules['astropy.extern.six'] = six
+import ccdproc
+from inspect import getsourcefile
+from os.path import abspath
+# displaying imports
+import matplotlib.pyplot as plt
+from astropy.visualization import ZScaleInterval
+from astropy.visualization.mpl_normalize import ImageNormalize
+
+from photutils.utils import calc_total_error
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry
+#from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
+from photutils.detection import DAOStarFinder
+
+warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
+warnings.filterwarnings("ignore", category=utils.exceptions.AstropyDeprecationWarning)
+
+#@pchoi @Pei Qin
+def read_ccddata_ls(ls_toOp, data_dir, return_ls = False):
+    if data_dir[-1] != '/':
+        data_dir = data_dir + '/'
+    if isinstance(ls_toOp, str):
+        input_ls = pd.read_csv(ls_toOp, header = None)
+        ls = input_ls[0]
+    else:
+        ls = ls_toOp
+    toOp = []
+    for i in ls:
+        toOp.append(CCDData.read(data_dir + i, unit = 'adu'))
+    toReturn = toOp
+    if return_ls:
+        toReturn = (toOp, ls)
+    return toReturn
+
+#@pchoi @Pei Qin
+def findAllIn(data_dir, file_matching, contain_dir=False, save_ls=True, save_name=None):
+    if data_dir[-1] != '/':
+        data_dir = data_dir + '/'
+    if save_name == None:
+        save_name = 'all_' + file_matching + '.txt'
+    list_files = glob.glob(data_dir + file_matching)
+    if not contain_dir:
+        list_files[:] = (os.path.basename(i) for i in list_files)
+    if save_ls:
+        with open(data_dir + save_name, "w") as output:
+            for i in list_files:
+                output.write(str(i) + '\n')
+    return list_files
+
+def show_img(img, title=None):
+    norm = ImageNormalize(img, interval=ZScaleInterval(nsamples=600, contrast=0.25))
+
+    fig, ax = plt.subplots()
+    fig.set_size_inches(6,6)
+    ax.imshow(img, cmap='Greys_r', origin='lower', norm=norm)
+    if title != None:
+        ax.set_title(title, fontsize=20)
+    # ax.tick_params(labelsize='large', width=1)
+
+    plt.show()
+
+
+parser = argparse.ArgumentParser(description="Perform slicing, calibration, and alignment on input fits files")
+parser.add_argument("target_name", action="store", type=str,help="the name of the target. no spaces")
+parser.add_argument("sci_data_dir", action="store", type = str, help = "the directory containing raw science data frames and/or cubes")
+parser.add_argument("output_dir", action="store", type = str, help = "the directory to place reduced output in. will be created if does not exist")
+
+args = parser.parse_args()
+
+print(args)
+
+target_name = args.target_name.replace(" ","_")
+raw_data_dir = args.sci_data_dir
+output_dir = args.output_dir
+
+raw_data_dir = os.path.abspath(raw_data_dir)
+output_dir = os.path.abspath(output_dir)
+
+# path to this folder
+CALIB_ROOT = abspath(os.path.join(abspath(getsourcefile(lambda:0)),os.pardir))
+os.chdir(CALIB_ROOT)
+from Frame import Frame
+
+calib_config = configparser.ConfigParser()
+calib_config.read('calib_config.txt')
+calib_config = calib_config["DEFAULT"]
+
+
+_CALIB_PATH = calib_config["calib_path"]
+
+filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
+print(filenames)
+
+frames = []
+# slice any cubes - into what directory should these go? should we then move non-cube data to that folder too before proceeding?
+for f in filenames:
+    frame = Frame.from_fits(raw_data_dir/Path(f))
+    d = frame.img.ndim
+    if d > 2:
+        if d == 3:
+            print(f"Slicing cube {f}")
+            sliced = frame.slice(tincrement=float(frame.header["EXPTIME"]))
+            for sliced_frame in sliced:
+                frames.append(sliced_frame)
+                # p = raw_data_dir/Path(sliced_frame.name+".fits")
+                # print(f"Saving {p}")
+                # sliced_frame.write_fits(p)
+                # del(sliced_frame)
+        else:
+            raise ValueError("Can't reduce data that isn't 2 or 3 dimensional")
+
+
+filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
+filters = {}
+for f in filenames:
+    print(f"Opening {f}")
+    frame = Frame.from_fits(os.path.join(raw_data_dir,f))
+    if frame.img.ndim != 2: # we don't delete the cubes after we slice them so we need to be careful not to re-open them
+        continue
+    frames.append(frame)
+
+reduced = []
+print("Subtracting superbias")
+super_bias = Frame.from_fits(_CALIB_PATH/Path("SuperBias.fits"))
+for i, frame in enumerate(frames):
+    reduced.append(frames[i]-super_bias)
+    reduced[i].name = "b_"+frames[i].name
+print("Bias subtracted")
+
+# all images must have the same exposure time!!!
+exptime = int(reduced[0].header["EXPTIME"])
+dark_path = f"SuperDark_{exptime}s.fits"
+super_dark = Frame.from_fits(_CALIB_PATH/Path(dark_path))
+
+print("Subtracting superdark")
+for i, frame in enumerate(reduced):
+    reduced[i] = reduced[i] - super_dark
+    reduced[i].name = "d"+reduced[i].name
+print("Subtracted")
+
+filters = []
+for frame in reduced:
+    filters.append(frame.header["FILTER"])
+filters = list(set(filters))
+
+print("Loading superflats")
+superflats = {}
+for filt in filters:
+    superflats[filt] = Frame.from_fits(_CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
+
+print("Subtracting superflats")
+for i, frame in enumerate(reduced):
+    reduced[i] = (frame-superflats[frame.header["FILTER"]])
+    reduced[i].name = "f"+frame.name
+print("Subtracted")
+
+reduced_dir = os.path.join(raw_data_dir,"reduced")
+
+if not os.path.exists(reduced_dir):
+    os.mkdir(reduced_dir)
+
+for filt in filters:
+    if not os.path.exists(os.path.join(reduced_dir,filt)):
+        os.mkdir(os.path.join(reduced_dir,filt))
+for frame in reduced:
+    frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"))
+
+
+import alipy
+import glob
+
+if not os.path.exists(output_dir):
+    os.mkdir(output_dir)
+
+print("Aligning frames")
+
+ref_image = os.path.join(reduced_dir,filters[0],[f for f in os.listdir(os.path.join(reduced_dir,filters[0])) if f.endswith("fits")][0])
+stacks = []
+for filt in filters:
+    images_to_align = sorted(glob.glob(os.path.join(reduced_dir,filt,"fdb_*.fits")))
+    print()
+    print("Aligning the following files:",images_to_align)
+    identifications = alipy.ident.run(ref_image, images_to_align, visu=False,verbose=False)
+
+    outputshape = alipy.align.shape(ref_image)
+
+    aligned_out = os.path.join(output_dir,filt+"_aligned")
+    if not os.path.exists(aligned_out):
+        os.mkdir(aligned_out)
+
+    for id in identifications:
+        if id.ok == True:
+            alipy.align.affineremap(id.ukn.filepath, id.trans, shape=outputshape, makepng=True,outdir=aligned_out,verbose=False)
+
+    aligned_ls = findAllIn(data_dir = aligned_out, file_matching='fdb_*.fits')
+
+    # running ccdproc.combine() + saving resulting image
+    aligned_slices = read_ccddata_ls(aligned_ls, aligned_out)
+
+    result_img = ccdproc.combine(aligned_slices,
+                            method='average',
+                            sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
+                            sigma_clip_func=np.ma.average)
+    result_img.meta['combined'] = True
+    result_img.write(output_dir/Path(f'combined_{target_name}_{filt}.fits'),overwrite=True)
+    stacks.append(f'combined_{target_name}_{filt}.fits')
+
+# make one superstack
+stacked_images = read_ccddata_ls(stacks, output_dir)
+
+super_stack = ccdproc.combine(stacked_images,
+                        method='average',
+                        sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
+                        sigma_clip_func=np.ma.average)
+super_stack.meta['combined'] = True
+super_stack.meta['FILTER'] = "l"
+
+super_stack.write(output_dir/Path(f'{target_name}_superstack.fits'),overwrite=True)
+
+super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'))
+# next:
+# SuperDarkBias reduce - add 'db' to name
+# for each flat, reduce the flats with matching filter
+#   only load flats we need
+#       SuperNormFlat_g = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_g.fits'))
+#       SuperNormFlat_r = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_r.fits'))
+#       SuperNormFlat_i = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_i.fits'))
+#       SuperNormFlat_C = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_C.fits'))
+#   add 'f' to name
+# save frames to outdir ( don't close )
+# if doing alignment, align all frames, write to aligned subdir of the output
+#   choose first frame as reference for now - in future, we should do quality checks to find a frame to use as reference
+#   add 'a' to name
+# if stack, stack by filter, add 'stacked_{filter name}' to name
+#   frame quality and rejection?
+# if wcs, solve the images (solve the aligned images if we aligned, otherwise solve the non-aligned ones, or just solve the stacked images)
+#   write to same directory probably
+#   add 's' to name
+
+
+
+
+
+

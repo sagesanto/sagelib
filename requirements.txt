@@ -1,0 +1,7 @@
+astropy
+astral
+pandas
+matplotlib
+ccdproc
+photutils
+alipy
