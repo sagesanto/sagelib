@@ -172,6 +172,10 @@ for f in filenames:
     frame = Frame.from_fits(os.path.join(raw_data_dir,f))
     frames.append(frame)
 
+if not frames:
+    print("No frames to process!")
+    exit()
+
 reduced = []
 if do_bias:
     print("Subtracting superbias")
@@ -180,6 +184,9 @@ if do_bias:
         reduced.append(frames[i]-super_bias)
         reduced[i].name = "b_"+frames[i].name
     print("Bias subtracted")
+
+if not reduced:
+    reduced = frames
 
 # all images must have the same exposure time!!!
 exptime = int(reduced[0].header["EXPTIME"])
@@ -193,6 +200,9 @@ if do_dark:
         reduced[i] = reduced[i] - super_dark
         reduced[i].name = "d"+reduced[i].name
     print("Subtracted")
+
+if not reduced:
+    reduced = frames
 
 filters = []
 for frame in reduced:
@@ -211,11 +221,12 @@ if do_flat:
         reduced[i].name = "f"+frame.name
     print("Subtracted")
 
-
+if not reduced:
+    reduced = frames
 
 # if we have steps left to do (alignment or wcs) and the user has asked us to save intermediate files, we do that here
 if save_intermediate and (do_align or do_wcs):
-    reduced_dir = os.path.join(raw_data_dir,"reduced")
+    reduced_dir = os.path.join(raw_data_dir,"intermediate")
 
     if not os.path.exists(reduced_dir):
         os.mkdir(reduced_dir)
