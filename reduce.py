@@ -319,10 +319,13 @@ super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'))
 # clean up after ourselves: if the user asked for alignment but not intermediate file saving, delete the intermediate files
 if not save_intermediate:
     print("Cleaning up intermediate files")
-    for filt in filters:
-        os.remove(os.path.join(intermediate_align_dir,filt))
-    os.remove(os.path.join(intermediate_align_dir,"intermediate"))
-    print("Cleaned up")
+    try:
+        for filt in filters:
+            os.remove(os.path.join(intermediate_align_dir,filt))
+        os.remove(os.path.join(intermediate_align_dir,"intermediate"))
+        print("Cleaned up") 
+    except:
+        print(f"Failed to remove intermediate alignment files at {intermediate_align_dir}. They may have already been deleted or access may be restricted.")
 # next:
 # SuperDarkBias reduce - add 'db' to name
 # for each flat, reduce the flats with matching filter
