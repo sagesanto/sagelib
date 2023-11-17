@@ -251,7 +251,7 @@ if do_wcs:
     print("WCS solving is not yet implemented - skipping")
 
 if not do_align:
-    print("Writing final output")
+    print(f"Writing final output ({len(frames)} frames)")
     for frame in reduced:
         frame.write_fits(os.path.join(output_dir,frame.name+".fits"))
     print("Saved")

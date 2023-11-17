@@ -130,14 +130,14 @@ class Frame:
         for i, im in enumerate(self.img):
             newName = self.name + name_extension + str(i+1)
             if self.header:
-                newheader = self.header
+                newheader = self.header.copy()
                 if tincrement is not None and start_time is not None:
                     newheader['DATE-OBS'] = increment_date(start_time, tincrement * i)
             else:
                 newheader = fits.PrimaryHDU(do_not_scale_image_data=True, ignore_blank=True)
             
             frames.append(Frame(img=im,name=newName,header=newheader))
-        print(f'Successfully sliced {self.name}.')
+        print(f'Successfully sliced {self.name} into {len(frames)} frames.')
         return frames
 
     def write_fits(self,filename):
