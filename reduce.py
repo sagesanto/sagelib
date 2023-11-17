@@ -74,14 +74,51 @@ def show_img(img, title=None):
     plt.show()
 
 
-parser = argparse.ArgumentParser(description="Perform slicing, calibration, and alignment on input fits files")
+parser = argparse.ArgumentParser(description="Perform slicing, calibration, and alignment on input fits files. If no operations are specified, all will be performed.")
 parser.add_argument("target_name", action="store", type=str,help="the name of the target. no spaces")
 parser.add_argument("sci_data_dir", action="store", type = str, help = "the directory containing raw science data frames and/or cubes")
 parser.add_argument("output_dir", action="store", type = str, help = "the directory to place reduced output in. will be created if does not exist")
+# the following arguments will tell us which operations to perform on the input data:
+# -s : slice any cubes present. otherwise, will ignore cubes
+# -f : perform flat fielding
+# -d : perform dark subtraction
+# -b : perform bias subtraction
+# -a : perform alignment
+# -w : perform wcs solving (not implemented yet)
+# -i : save intermediate files
+
+# the default will be to do all of the above, but if any are specified, we don't do the ones that aren't specified
+
+parser.add_argument("-s", "--slice", action="store_true", help="slice any cubes present and process their frames too. otherwise, will ignore cubes")
+parser.add_argument("-f", "--flat", action="store_true", help="perform flat fielding")
+parser.add_argument("-d", "--dark", action="store_true", help="perform dark subtraction")
+parser.add_argument("-b", "--bias", action="store_true", help="perform bias subtraction")
+parser.add_argument("-a", "--align", action="store_true", help="perform alignment")
+parser.add_argument("-w", "--wcs", action="store_true", help="perform wcs solving")
+
+parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process")
 
 args = parser.parse_args()
 
 print(args)
+
+do_slice = args.slice
+do_flat = args.flat
+do_dark = args.dark
+do_bias = args.bias
+do_align = args.align
+do_wcs = args.wcs
+save_intermediate = args.intermediate
+
+# if no operation arguments are specified, do all of them
+if not (do_slice or do_flat or do_dark or do_bias or do_align or do_wcs):
+    print("No operation arguments specified. Doing all operations.")
+    do_slice = True
+    do_flat = True
+    do_dark = True
+    do_bias = True
+    do_align = True
+    do_wcs = True
 
 target_name = args.target_name.replace(" ","_")
 raw_data_dir = args.sci_data_dir
@@ -103,91 +140,112 @@ calib_config = calib_config["DEFAULT"]
 _CALIB_PATH = calib_config["calib_path"]
 
 filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
-print(filenames)
+print(f"Found the following files as input: {', '.join(filenames)}")
 
 frames = []
+cubenames = []
 # slice any cubes - into what directory should these go? should we then move non-cube data to that folder too before proceeding?
 for f in filenames:
     frame = Frame.from_fits(raw_data_dir/Path(f))
     d = frame.img.ndim
     if d > 2:
-        if d == 3:
-            print(f"Slicing cube {f}")
-            sliced = frame.slice(tincrement=float(frame.header["EXPTIME"]))
-            for sliced_frame in sliced:
-                frames.append(sliced_frame)
-                # p = raw_data_dir/Path(sliced_frame.name+".fits")
-                # print(f"Saving {p}")
-                # sliced_frame.write_fits(p)
-                # del(sliced_frame)
-        else:
-            raise ValueError("Can't reduce data that isn't 2 or 3 dimensional")
+        cubenames.append(f)
+        if do_slice:
+            if d == 3:
+                print(f"Slicing cube {f}")
+                sliced = frame.slice(tincrement=float(frame.header["EXPTIME"]))
+                for sliced_frame in sliced:
+                    frames.append(sliced_frame)
+                    # p = raw_data_dir/Path(sliced_frame.name+".fits")
+                    # print(f"Saving {p}")
+                    # sliced_frame.write_fits(p)
+                    # del(sliced_frame)
+            else:
+                raise ValueError("Can't reduce data that isn't 2 or 3 dimensional")
 
 
 filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
+filenames = [f for f in filenames if f not in cubenames] # we don't delete the cubes after we slice them so we need to be careful not to re-open them
 filters = {}
 for f in filenames:
     print(f"Opening {f}")
     frame = Frame.from_fits(os.path.join(raw_data_dir,f))
-    if frame.img.ndim != 2: # we don't delete the cubes after we slice them so we need to be careful not to re-open them
-        continue
     frames.append(frame)
 
 reduced = []
-print("Subtracting superbias")
-super_bias = Frame.from_fits(_CALIB_PATH/Path("SuperBias.fits"))
-for i, frame in enumerate(frames):
-    reduced.append(frames[i]-super_bias)
-    reduced[i].name = "b_"+frames[i].name
-print("Bias subtracted")
+if do_bias:
+    print("Subtracting superbias")
+    super_bias = Frame.from_fits(_CALIB_PATH/Path("SuperBias.fits"))
+    for i, frame in enumerate(frames):
+        reduced.append(frames[i]-super_bias)
+        reduced[i].name = "b_"+frames[i].name
+    print("Bias subtracted")
 
 # all images must have the same exposure time!!!
 exptime = int(reduced[0].header["EXPTIME"])
-dark_path = f"SuperDark_{exptime}s.fits"
-super_dark = Frame.from_fits(_CALIB_PATH/Path(dark_path))
 
-print("Subtracting superdark")
-for i, frame in enumerate(reduced):
-    reduced[i] = reduced[i] - super_dark
-    reduced[i].name = "d"+reduced[i].name
-print("Subtracted")
+if do_dark:
+    dark_path = f"SuperDark_{exptime}s.fits"
+    super_dark = Frame.from_fits(_CALIB_PATH/Path(dark_path))
+
+    print("Subtracting superdark")
+    for i, frame in enumerate(reduced):
+        reduced[i] = reduced[i] - super_dark
+        reduced[i].name = "d"+reduced[i].name
+    print("Subtracted")
 
 filters = []
 for frame in reduced:
     filters.append(frame.header["FILTER"])
 filters = list(set(filters))
 
-print("Loading superflats")
-superflats = {}
-for filt in filters:
-    superflats[filt] = Frame.from_fits(_CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
+if do_flat:
+    print("Loading superflats")
+    superflats = {}
+    for filt in filters:
+        superflats[filt] = Frame.from_fits(_CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
 
-print("Subtracting superflats")
-for i, frame in enumerate(reduced):
-    reduced[i] = (frame-superflats[frame.header["FILTER"]])
-    reduced[i].name = "f"+frame.name
-print("Subtracted")
-
-reduced_dir = os.path.join(raw_data_dir,"reduced")
-
-if not os.path.exists(reduced_dir):
-    os.mkdir(reduced_dir)
-
-for filt in filters:
-    if not os.path.exists(os.path.join(reduced_dir,filt)):
-        os.mkdir(os.path.join(reduced_dir,filt))
-for frame in reduced:
-    frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"))
+    print("Subtracting superflats")
+    for i, frame in enumerate(reduced):
+        reduced[i] = (frame-superflats[frame.header["FILTER"]])
+        reduced[i].name = "f"+frame.name
+    print("Subtracted")
 
 
-import alipy
-import glob
+
+# if we have steps left to do (alignment or wcs) and the user has asked us to save intermediate files, we do that here
+if save_intermediate and (do_align or do_wcs):
+    reduced_dir = os.path.join(raw_data_dir,"reduced")
+
+    if not os.path.exists(reduced_dir):
+        os.mkdir(reduced_dir)
+
+    for filt in filters:
+        if not os.path.exists(os.path.join(reduced_dir,filt)):
+            os.mkdir(os.path.join(reduced_dir,filt))
+    print("Saving reduced frames.")
+    for frame in reduced:
+        frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"))
+    print("Saved")
 
 if not os.path.exists(output_dir):
     os.mkdir(output_dir)
 
-print("Aligning frames")
+if do_wcs:
+    print("WCS solving is not yet implemented - skipping")
 
+if not do_align:
+    print("Writing final output")
+    for frame in reduced:
+        frame.write_fits(os.path.join(output_dir,frame.name+".fits"))
+    print("Saved")
+    exit()
+
+# if we haven't exited by this point, do alignment
+import alipy
+import glob
+
+print("Aligning frames")
 ref_image = os.path.join(reduced_dir,filters[0],[f for f in os.listdir(os.path.join(reduced_dir,filters[0])) if f.endswith("fits")][0])
 stacks = []
 for filt in filters:

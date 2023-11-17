@@ -125,20 +125,18 @@ class Frame:
             start_time = self.header['DATE-OBS']
         except:
             start_time = None
-        counter = 0
         if name_extension is None:
             name_extension = '_00'
-        for i in self.img:
-            newName = self.name + name_extension + str(counter+1)
+        for i, im in enumerate(self.img):
+            newName = self.name + name_extension + str(i+1)
             if self.header:
                 newheader = self.header
-                if tincrement != None and start_time:
-                    newheader['DATE-OBS'] = increment_date(start_time, tincrement * counter)
+                if tincrement is not None and start_time is not None:
+                    newheader['DATE-OBS'] = increment_date(start_time, tincrement * i)
             else:
                 newheader = fits.PrimaryHDU(do_not_scale_image_data=True, ignore_blank=True)
             
-            frames.append(Frame(img=i,name=newName,header=newheader))
-            counter += 1
+            frames.append(Frame(img=im,name=newName,header=newheader))
         print(f'Successfully sliced {self.name}.')
         return frames
 
