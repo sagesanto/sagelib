@@ -227,11 +227,10 @@ if do_flat:
 
 if not reduced:
     reduced = frames
+reduced_dir = os.path.join(raw_data_dir,"intermediate")
 
 # if we have steps left to do (alignment or wcs) and the user has asked us to save intermediate files, we do that here
 if save_intermediate and (do_align or do_wcs):
-    reduced_dir = os.path.join(raw_data_dir,"intermediate")
-
     if not os.path.exists(reduced_dir):
         os.mkdir(reduced_dir)
 
