@@ -118,12 +118,11 @@ if not (do_slice or do_flat or do_dark or do_bias or do_align or do_wcs):
     do_align = True
     do_wcs = True
 
-for arg in vars(args):
-    if arg != "target_name" and arg != "sci_data_dir" and arg != "output_dir" and arg != "intermediate":
-        if getattr(args, arg):
-            print(f"Performing {arg} operation")
-        else:
-            print(f"Skipping {arg} operation")
+for op_bool, op_name in zip([do_slice,do_flat,do_dark,do_bias,do_align,do_wcs],["slice","flat","dark","bias","align","wcs"]):
+    if op_bool:
+        print(f"Will perform {op_name} operation")
+    else:
+        print(f"Will not perform {op_name} operation")
 
 target_name = args.target_name.replace(" ","_")
 raw_data_dir = args.sci_data_dir
