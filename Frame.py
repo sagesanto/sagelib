@@ -140,8 +140,8 @@ class Frame:
         print(f'Successfully sliced {self.name} into {len(frames)} frames.')
         return frames
 
-    def write_fits(self,filename):
-        fits.writeto(filename, self.img, header=self.header)
+    def write_fits(self,filename,overwrite=False):
+        fits.writeto(filename, self.img, header=self.header, overwrite=overwrite)
     
     def __mul__(self,other):
         if isinstance(other,Frame):

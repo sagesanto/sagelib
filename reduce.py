@@ -12,6 +12,7 @@ import pandas as pd
 from astropy.nddata import CCDData
 import sys
 import six
+import shutil
 sys.modules['astropy.extern.six'] = six
 import ccdproc
 from inspect import getsourcefile
@@ -93,10 +94,10 @@ parser.add_argument("-s", "--slice", action="store_true", help="slice any cubes 
 parser.add_argument("-f", "--flat", action="store_true", help="perform flat fielding")
 parser.add_argument("-d", "--dark", action="store_true", help="perform dark subtraction")
 parser.add_argument("-b", "--bias", action="store_true", help="perform bias subtraction")
-parser.add_argument("-a", "--align", action="store_true", help="perform alignment")
+parser.add_argument("-a", "--align", action="store_true", help="perform alignment. will result in temporarily saving intermediate files. Will clear 'temp_align_dir' if it exists.")
 parser.add_argument("-w", "--wcs", action="store_true", help="perform wcs solving")
 
-parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process")
+parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process. will overwrite existing files that share the same name in the intermediate directory.")
 
 args = parser.parse_args()
 
@@ -227,10 +228,10 @@ if do_flat:
 
 if not reduced:
     reduced = frames
-reduced_dir = os.path.join(raw_data_dir,"intermediate")
-
+reduced_dir = os.path.join(raw_data_dir,"intermediate") if "intermediate" not in output_dir else os.path.join(raw_data_dir,"intermediate_temp")
+intermediate_align_dir =  os.path.join(raw_data_dir,"temp_align_dir") if not save_intermediate else reduced_dir
 # if we have steps left to do (alignment or wcs) and the user has asked us to save intermediate files, we do that here
-if save_intermediate and (do_align or do_wcs):
+if (save_intermediate and (do_wcs or do_align)):
     if not os.path.exists(reduced_dir):
         os.mkdir(reduced_dir)
 
@@ -239,8 +240,18 @@ if save_intermediate and (do_align or do_wcs):
             os.mkdir(os.path.join(reduced_dir,filt))
     print("Saving reduced frames.")
     for frame in reduced:
-        frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"))
+        frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"),overwrite=True)
     print("Saved")
+elif do_align and not save_intermediate:
+        print("Saving frames in preparation for alignment")
+        if os.path.exists(intermediate_align_dir):
+            shutil.rmtree(intermediate_align_dir)
+        os.mkdir(intermediate_align_dir)
+        for filt in filters:
+            os.mkdir(os.path.join(intermediate_align_dir,filt))
+        for frame in reduced:
+            frame.write_fits(os.path.join(intermediate_align_dir,frame.header["FILTER"],frame.name+".fits"))
+        print("Saved")
 
 if not os.path.exists(output_dir):
     os.mkdir(output_dir)
@@ -260,10 +271,10 @@ import alipy
 import glob
 
 print("Aligning frames")
-ref_image = os.path.join(reduced_dir,filters[0],[f for f in os.listdir(os.path.join(reduced_dir,filters[0])) if f.endswith("fits")][0])
+ref_image = os.path.join(intermediate_align_dir,filters[0],[f for f in os.listdir(os.path.join(intermediate_align_dir,filters[0])) if f.endswith("fits")][0])
 stacks = []
 for filt in filters:
-    images_to_align = sorted(glob.glob(os.path.join(reduced_dir,filt,"fdb_*.fits")))
+    images_to_align = sorted(glob.glob(os.path.join(intermediate_align_dir,filt,"*.fit*")))
     print()
     print("Aligning the following files:",images_to_align)
     identifications = alipy.ident.run(ref_image, images_to_align, visu=False,verbose=False)
@@ -299,11 +310,19 @@ super_stack = ccdproc.combine(stacked_images,
                         sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
                         sigma_clip_func=np.ma.average)
 super_stack.meta['combined'] = True
-super_stack.meta['FILTER'] = "l"
+super_stack.meta['FILTER'] = "all"
 
 super_stack.write(output_dir/Path(f'{target_name}_superstack.fits'),overwrite=True)
 
 super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'))
+
+# clean up after ourselves: if the user asked for alignment but not intermediate file saving, delete the intermediate files
+if not save_intermediate:
+    print("Cleaning up intermediate files")
+    for filt in filters:
+        os.remove(os.path.join(intermediate_align_dir,filt))
+    os.remove(os.path.join(intermediate_align_dir,"intermediate"))
+    print("Cleaned up")
 # next:
 # SuperDarkBias reduce - add 'db' to name
 # for each flat, reduce the flats with matching filter
