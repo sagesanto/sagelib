@@ -100,8 +100,6 @@ parser.add_argument("-i", "--intermediate", action="store_true", help="save inte
 
 args = parser.parse_args()
 
-print(args)
-
 do_slice = args.slice
 do_flat = args.flat
 do_dark = args.dark
@@ -119,6 +117,13 @@ if not (do_slice or do_flat or do_dark or do_bias or do_align or do_wcs):
     do_bias = True
     do_align = True
     do_wcs = True
+
+for arg in vars(args):
+    if arg != "target_name" and arg != "sci_data_dir" and arg != "output_dir" and arg != "intermediate":
+        if getattr(args, arg):
+            print(f"Performing {arg} operation")
+        else:
+            print(f"Skipping {arg} operation")
 
 target_name = args.target_name.replace(" ","_")
 raw_data_dir = args.sci_data_dir
