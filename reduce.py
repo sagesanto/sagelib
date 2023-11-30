@@ -99,6 +99,8 @@ parser.add_argument("-w", "--wcs", action="store_true", help="perform wcs solvin
 
 parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process. will overwrite existing files that share the same name in the intermediate directory.")
 
+parser.add_argument("--ref_image_path", action="store", type=str,help="the path to the reference image to use for alignment. if not specified, will use the first image in the input directory")
+
 args = parser.parse_args()
 
 do_slice = args.slice
@@ -108,6 +110,7 @@ do_bias = args.bias
 do_align = args.align
 do_wcs = args.wcs
 save_intermediate = args.intermediate
+ref_image_path = args.ref_image_path
 
 # if no operation arguments are specified, do all of them
 if not (do_slice or do_flat or do_dark or do_bias or do_align or do_wcs):
@@ -271,15 +274,16 @@ import alipy
 import glob
 
 print("Aligning frames")
-ref_image = os.path.join(intermediate_align_dir,filters[0],[f for f in os.listdir(os.path.join(intermediate_align_dir,filters[0])) if f.endswith("fits")][0])
+if not ref_image_path:
+    ref_image_path = os.path.join(intermediate_align_dir,filters[0],[f for f in os.listdir(os.path.join(intermediate_align_dir,filters[0])) if f.endswith("fits")][0])
 stacks = []
 for filt in filters:
     images_to_align = sorted(glob.glob(os.path.join(intermediate_align_dir,filt,"*.fit*")))
     print()
     print("Aligning the following files:",images_to_align)
-    identifications = alipy.ident.run(ref_image, images_to_align, visu=False,verbose=False)
+    identifications = alipy.ident.run(ref_image_path, images_to_align, visu=False,verbose=False)
 
-    outputshape = alipy.align.shape(ref_image)
+    outputshape = alipy.align.shape(ref_image_path)
 
     aligned_out = os.path.join(output_dir,filt+"_aligned")
     if not os.path.exists(aligned_out):
