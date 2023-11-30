@@ -30,7 +30,7 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 warnings.filterwarnings("ignore", category=utils.exceptions.AstropyDeprecationWarning)
 
 
-def align(img_dir, pattern,ref_image_path,aligned_out,target_name):
+def align(img_dir, pattern,ref_image_path,aligned_out,target_name, also_make_combined_aligned=False):
     # print(os.listdir(img_dir))
     images_to_align = sorted(glob.glob(os.path.join(img_dir,pattern)))
     print()
@@ -45,22 +45,28 @@ def align(img_dir, pattern,ref_image_path,aligned_out,target_name):
 
     if not os.path.exists(aligned_out):
         os.mkdir(aligned_out)
-
+    unable_to_align = []
     for id in identifications:
         if id.ok == True:
             alipy.align.affineremap(id.ukn.filepath, id.trans, shape=outputshape, makepng=True,outdir=aligned_out,verbose=False)
+        else:
+            unable_to_align.append(id.ukn.filepath)
 
-    aligned_ls = findAllIn(data_dir = aligned_out, file_matching='fdb_*.fits')
+    print(f"Was not able to align the following {len(unable_to_align)} files: {unable_to_align}")
 
-    # running ccdproc.combine() + saving resulting image
-    aligned_slices = read_ccddata_ls(aligned_ls, aligned_out)
+    if also_make_combined_aligned:
+        aligned_ls = findAllIn(data_dir = aligned_out, file_matching='fdb_*.fits')
 
-    result_img = ccdproc.combine(aligned_slices,
-                            method='average',
-                            sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
-                            sigma_clip_func=np.ma.average)
-    result_img.meta['combined'] = True
-    result_img.write(aligned_out/Path(f'combined_{target_name}.fits'),overwrite=True)
+        # running ccdproc.combine() + saving resulting image
+        aligned_slices = read_ccddata_ls(aligned_ls, aligned_out)
+
+        result_img = ccdproc.combine(aligned_slices,
+                                method='average',
+                                sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
+                                sigma_clip_func=np.ma.average)
+        result_img.meta['combined'] = True
+        result_img.write(aligned_out/Path(f'combined_{target_name}.fits'),overwrite=True)
+    print("Done aligning.")
 
 #"fdb_*.fits"
 
