@@ -251,7 +251,8 @@ elif do_align and not save_intermediate:
             shutil.rmtree(intermediate_align_dir)
         os.mkdir(intermediate_align_dir)
         for filt in filters:
-            os.mkdir(os.path.join(intermediate_align_dir,filt))
+            if not os.path.exists(os.path.join(intermediate_align_dir,filt)): # getting wierd error where this already exists, don't know why
+                os.mkdir(os.path.join(intermediate_align_dir,filt))
         for frame in reduced:
             frame.write_fits(os.path.join(intermediate_align_dir,frame.header["FILTER"],frame.name+".fits"))
         print("Saved")
