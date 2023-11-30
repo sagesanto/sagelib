@@ -1,7 +1,7 @@
 from Frame import Frame, FrameStack
 import argparse
 import numpy as np 
-from utils import findAllIn
+from image_utils import findAllIn
 
 parser = argparse.ArgumentParser(description="Scale a reference image so its average value matches the average average value of a series of frames. Useful for alignment with reference images not taken in the same run as the series.")
 
