@@ -26,77 +26,85 @@ import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
 
- #@pchoi @Pei Qin
-def read_ccddata_ls(ls_toOp, data_dir, return_ls = False):
-    if data_dir[-1] != '/':
-        data_dir = data_dir + '/'
-    if isinstance(ls_toOp, str):
-        input_ls = pd.read_csv(ls_toOp, header = None)
-        ls = input_ls[0]
-    else:
-        ls = ls_toOp
-    toOp = []
-    for i in ls:
-        toOp.append(CCDData.read(data_dir + i, unit = 'adu'))
-    toReturn = toOp
-    if return_ls:
-        toReturn = (toOp, ls)
-    return toReturn
+from utils import read_ccdata_ls, findAllIn, increment_date, show_img
 
 
-#@pchoi @Pei Qin
-def findAllIn(data_dir, file_matching, contain_dir=False, save_ls=True, save_name=None):
-    if data_dir[-1] != '/':
-        data_dir = data_dir + '/'
-    if save_name == None:
-        save_name = 'all_' + file_matching + '.txt'
-    list_files = glob.glob(data_dir + file_matching)
-    if not contain_dir:
-        list_files[:] = (os.path.basename(i) for i in list_files)
-    if save_ls:
-        with open(data_dir + save_name, "w") as output:
-            for i in list_files:
-                output.write(str(i) + '\n')
-    return list_files
+def open_frames_in_chunks(filename_list,max_size_mb):
+    """
+    Open frames in groups of size max_size_mb
+    @param max_size_mb: maximum size of chunk in MB
+    @return: generator of chunks of frames
+    """
+    max_size_bytes = max_size_mb*1024*1024
+    current_size = 0
+    current_chunk = []
+    for filename in filename_list:
+        filesize = os.path.getsize(filename)
+        if current_size+filesize > max_size_bytes:
+            yield current_chunk
+            current_chunk = []
+            current_size = 0
+        current_chunk.append(filename)
+        current_size += filesize
+    yield current_chunk
 
 
-# @Pei Qin
-def increment_date(strdate, tincrement):
-    parsed = parse(strdate)
-    later = parsed + relativedelta(seconds=tincrement)
-    incremented_dateobj = later.strftime('%Y-%m-%dT%X.0000')
-    return incremented_dateobj
-
-# @pchoi @Pei Qin
-def show_img(img, title=None,titlesize=14):
-    norm = ImageNormalize(img, interval=ZScaleInterval(nsamples=600, contrast=0.25))
-    # would be nice to be able to choose between arcseconds and pixels for axes - plate scale in config file
-    fig, ax = plt.subplots()
-    fig.set_size_inches(6,6)
-    ax.imshow(img, cmap='Greys_r', origin='lower', norm=norm)
-    if title != None:
-        ax.set_title(title, fontsize=titlesize)   
-    plt.show()
+class FrameSet:
+    def __init__(self,filename_list,max_chunk_size_mb):
+        self.filename_list = filename_list
+        self.max_chunk_size_mb = max_chunk_size_mb
+        self.frames = []
+    def __enter__(self):
+        self.chunks = open_frames_in_chunks(self.filename_list, max_size_mb=self.max_chunk_size_mb)
+        self.chunk_generator = (Frame.from_fits(filename) for chunk in self.chunks for filename in chunk)
+        return self.chunk_generator
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        # for frame in self.frames:
+        #     frame.img = None
+        #     frame.header = None
+        # self.frames = []
+        # return False
+        pass
 
 class Frame:
     def __init__(self, img, name, header=None, savepath=None) -> None:
         self.img = img.astype(np.float32)
         self.header = header
         self.name = name
+        self._median = self._mean = self._stdev = None
     
     @classmethod
-    def from_fits(cls,path):
+    def from_fits(cls,path,kwargs={}):
         f = fits.open(Path(path))
         img = f[0].data
         header = f[0].header
         f.close()
         name = str(path).split(os.sep)[-1].replace(".fits",'').replace(".fit",'')
-        return cls(img,name=name,header=header,savepath=path)
+        return cls(img,name=name,header=header,savepath=path,**kwargs)
 
     def calc_stats(self):
         self.median = np.median(self.img)
         self.mean = np.mean(self.img)
         self.stdev = np.std(self.img)
+    
+    @property
+    def median(self):
+        if self._median is None:
+            self.calc_stats()
+        return self._median
+    
+    @property
+    def mean(self):
+        if self._mean is None:
+            self.calc_stats()
+        return self._mean
+    
+    @property
+    def stdev(self):
+        if self._stdev is None:
+            self.calc_stats()
+        return self._stdev
 
     def show(self):
         show_img(self.img,title=self.name,titlesize=14)
@@ -165,7 +173,6 @@ class Frame:
 
 
     def __str__(self):
-        self.calc_stats()
         attrs = [
             f"Image {self.name}",
             f"Shape: {self.img.shape}",
