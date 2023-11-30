@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
 
-from utils import read_ccdata_ls, findAllIn, increment_date, show_img
+from image_utils import read_ccdata_ls, findAllIn, increment_date, show_img
 
 
 def open_frames_in_chunks(filename_list,max_size_mb):
