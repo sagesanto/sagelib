@@ -75,12 +75,12 @@ class Frame:
         self._median = self._mean = self._stdev = None
     
     @classmethod
-    def from_fits(cls,path,kwargs={}):
+    def from_fits(cls,path,name=None,**kwargs):
         f = fits.open(Path(path))
         img = f[0].data
         header = f[0].header
         f.close()
-        name = str(path).split(os.sep)[-1].replace(".fits",'').replace(".fit",'')
+        name = name or str(path).split(os.sep)[-1].replace(".fits",'').replace(".fit",'')
         return cls(img,name=name,header=header,savepath=path,**kwargs)
 
     def calc_stats(self):
