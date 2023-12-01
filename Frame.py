@@ -84,9 +84,9 @@ class Frame:
         return cls(img,name=name,header=header,savepath=path,**kwargs)
 
     def calc_stats(self):
-        self.median = np.median(self.img)
-        self.mean = np.mean(self.img)
-        self.stdev = np.std(self.img)
+        self._median = np.median(self.img)
+        self._mean = np.mean(self.img)
+        self._stdev = np.std(self.img)
     
     @property
     def median(self):
