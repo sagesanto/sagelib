@@ -29,6 +29,6 @@ series_mean = avgs.mean()
 
 ref_img = Frame.from_fits(ref_image_input_path,kwargs={"name":"Scaled Reference Image"})
 ref_img = (ref_img*series_mean/ref_img.mean)
-ref_img.write_fits(overwrite=True, output_path=ref_image_output_path)
+ref_img.write_fits(ref_image_output_path, overwrite=True)
 if args.show:
     ref_img.show()
