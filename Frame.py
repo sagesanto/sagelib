@@ -68,10 +68,12 @@ class FrameSet:
         pass
 
 class Frame:
-    def __init__(self, img, name, header=None, savepath=None) -> None:
+    def __init__(self, img, name, header=None, savepath=None,**kwargs) -> None:
         self.img = img.astype(np.float32)
         self.header = header
         self.name = name
+        for key, value in kwargs.items():
+            setattr(self, key, value)
         self._median = self._mean = self._stdev = None
     
     @classmethod
