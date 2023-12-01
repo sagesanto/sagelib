@@ -1,4 +1,4 @@
-from Frame import Frame, FrameStack
+from Frame import Frame, FrameSet
 import argparse
 import numpy as np 
 from image_utils import findAllIn
@@ -22,7 +22,7 @@ ref_image_output_path = args.ref_image_output_path
 filenames = findAllIn(data_dir,file_matching=args.file_pattern)
 
 avgs = np.array([])
-with FrameStack(filenames, max_mem_usage_mb) as frames:
+with FrameSet(filenames, max_mem_usage_mb) as frames:
     for frame in frames:
         avgs = np.append(avgs, frame.mean)
 series_mean = avgs.mean()
