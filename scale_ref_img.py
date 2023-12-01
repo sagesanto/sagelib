@@ -2,7 +2,7 @@ from Frame import Frame, FrameSet
 import argparse
 import numpy as np 
 from image_utils import findAllIn
-
+import os
 parser = argparse.ArgumentParser(description="Scale a reference image so its average value matches the average average value of a series of frames. Useful for alignment with reference images not taken in the same run as the series.")
 
 parser.add_argument("ref_image_input_path", type=str, help="Path to the reference image fits file")
@@ -19,7 +19,7 @@ data_dir = args.data_dir
 max_mem_usage_mb = args.max_mem_usage_mb
 ref_image_output_path = args.ref_image_output_path
 
-filenames = findAllIn(data_dir,file_matching=args.file_pattern)
+filenames = [os.path.join(data_dir,filename) for filename in findAllIn(data_dir,file_matching=args.file_pattern)]
 
 avgs = np.array([])
 with FrameSet(filenames, max_mem_usage_mb) as frames:
