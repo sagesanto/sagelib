@@ -76,6 +76,8 @@ if __name__ == "__main__":
     pattern = sys.argv[3]
     out_dir = sys.argv[4]
     target_name = sys.argv[5]
+
+    
     ref_img = os.path.join(input_dir,ref_img)
 
     align(input_dir,pattern,ref_img,out_dir,target_name)
