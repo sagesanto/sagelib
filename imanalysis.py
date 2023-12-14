@@ -68,19 +68,18 @@ if __name__ == "__main__":
     data_dir = args.data_dir
     output_path = args.output_path
     dicts = []
-    files = os.listdir(data_dir)
+    files = [f for f in os.listdir(data_dir) if f.endswith(".fits") and not f.startswith(".")]
     for file in tqdm(files):
-        if file.endswith(".fits"):
-            try:
-                data = Frame.from_fits(os.path.join(data_dir,file))
-            except:
-                print(f"Failed to load frame {file}")
-                continue
-            row = fwhm(data)
-            if row is not None:
-                dicts.append(row)
-            else:
-                print(f"No dict back from frame {file}")
+        try:
+            data = Frame.from_fits(os.path.join(data_dir,file))
+        except:
+            print(f"Failed to load frame {file}")
+            continue
+        row = fwhm(data)
+        if row is not None:
+            dicts.append(row)
+        else:
+            print(f"No dict back from frame {file}")
 
     df = pd.DataFrame(dicts)
     print(df)
