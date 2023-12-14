@@ -71,9 +71,14 @@ if __name__ == "__main__":
     files = os.listdir(data_dir)
     for file in tqdm(files):
         if file.endswith(".fits"):
-            data = Frame.from_fits(os.path.join(data_dir,file))
-            if data:
-                dicts.append(fwhm(data))
+            try:
+                data = Frame.from_fits(os.path.join(data_dir,file))
+            except:
+                print(f"Failed to load frame {file}")
+                continue
+            row = fwhm(data)
+            if row is not None:
+                dicts.append(row)
             else:
                 print(f"No dict back from frame {file}")
 
