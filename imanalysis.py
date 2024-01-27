@@ -13,7 +13,7 @@ import os, argparse
 from tqdm import tqdm
 
 
-def Image_Segmetation(data, threshold, npixels):
+def Image_Segmentation(data, threshold, npixels):
 	sigma = 3.0 * gaussian_fwhm_to_sigma  # FWHM = 3.
 	kernel = Gaussian2DKernel(sigma, x_size=3, y_size=3)
 	convolved_data = convolve(data, kernel, normalize_kernel=True)
@@ -56,7 +56,7 @@ def fwhm(Frame):
 
     table.sort(['kron_flux'], reverse = True)
     table = table.groups.aggregate(np.mean)
-    return {"julian":timestamp,"avg_fwhm":table["fwhm"][0]}
+    return {"timestamp":timestamp,"avg_fwhm":table["fwhm"][0]}
 
 
 if __name__ == "__main__":
@@ -84,3 +84,4 @@ if __name__ == "__main__":
     df = pd.DataFrame(dicts)
     print(df)
     df.to_csv(os.path.join(output_path,"fwhms.csv"))
+    df.describe().to_csv(os.path.join(output_path,"fwhms_stats.csv"))

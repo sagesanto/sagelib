@@ -1,4 +1,5 @@
 calib_config.txt
+utc_dates.csv
 
 test/*
 # Byte-compiled / optimized / DLL files
