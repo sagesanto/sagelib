@@ -34,6 +34,9 @@ warnings.filterwarnings("ignore", category=utils.exceptions.AstropyDeprecationWa
 def align(img_dir, pattern,ref_image_path,aligned_out,target_name, also_make_combined_aligned=False):
     # print(os.listdir(img_dir))
     images_to_align = sorted(glob.glob(os.path.join(img_dir,pattern)))
+    if not len(images_to_align):
+        print(f"No images found in {img_dir} matching pattern {pattern}")
+        exit()
     print()
     print("Aligning the following files:",images_to_align)
     if ref_image_path is None:
