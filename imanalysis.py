@@ -30,7 +30,11 @@ def Deblending(convolved_data, segm, npixels, nlevels, contrast):
 # given a list of sources and a frame, return the FWHM of each of the sources
 def fwhm(Frame):
     fwhms = []
-    timestamp = datetime.strptime(Frame.header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S.0000').timestamp()
+    # should make this more general in the future:
+    try:
+        timestamp = datetime.strptime(Frame.header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S.0000').timestamp()
+    except ValueError:
+        timestamp = datetime.strptime(Frame.header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S.%f').timestamp()
 
     data = Frame.img
     mean, median, std = sigma_clipped_stats(data, sigma=3.0)
@@ -38,7 +42,7 @@ def fwhm(Frame):
     data -= median
 
     npixels = 16   # number of connected pixels needed, each above threshold, for an area to qualify as a source
-    convolved_data, segm = Image_Segmetation(data, threshold, npixels)
+    convolved_data, segm = Image_Segmentation(data, threshold, npixels)
     if convolved_data is None or segm is None:
         return None
     segm_deblend = Deblending(convolved_data, segm, npixels, nlevels=8, contrast=1)
