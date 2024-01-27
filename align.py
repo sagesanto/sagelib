@@ -89,6 +89,4 @@ if __name__ == "__main__":
     out_dir = args.out_dir
     target_name = args.target_name
 
-    ref_img = os.path.join(input_dir, ref_img)
-
     align(input_dir,pattern,ref_img,out_dir,target_name)
