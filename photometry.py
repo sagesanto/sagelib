@@ -21,6 +21,7 @@ from multiprocessing import Pool
 def add_err_img(filename,bkg_std_dev,effective_gain):
     with fits.open(filename, 'update') as hdu:
         if len(hdu) == 1:
+            print("Datatype:",hdu[0].data.dtype)
             err_img = calc_total_error(hdu[0].data, bkg_std_dev, effective_gain)
             err_hdu = fits.ImageHDU(err_img.astype(np.float32))
             err_hdu.header['EXTNAME'] = ('UNCERT', 'extension name')
