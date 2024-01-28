@@ -115,7 +115,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
 
     if stellar_fwhm is None:
         print("No stellar fwhm provided. Calculating stellar fwhm...")
-        stellar_fwhm = fwhm(ref_frame)["avg_fwhm"]
+        stellar_fwhm = fwhm(ref_frame)["avg_fwhm"].value
         print(f"Average stellar fwhm calculated as {stellar_fwhm} pixels.")
 
     # convert radii to pixels
