@@ -43,7 +43,7 @@ def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulu
         # add timestamp + filter info
         batch_phot_table['timestamp'] = im[0].header['DATE-OBS']
         batch_phot_table['filter'] = im[0].header['FILTER']
-
+        print(im[0].data.shape)
         annulus_stats = [ApertureStats(im[0].data, ann_ap) for ann_ap in all_annulus]
         bkg_median = [stat.median for stat in annulus_stats]
 
