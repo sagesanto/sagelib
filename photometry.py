@@ -205,4 +205,4 @@ if __name__ == "__main__":
     keep_brightest = 10
     effective_gain = 0.8
     detection_sigma = 3
-    photometry(ref_img_path, paths, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, stellar_fwhm, phot_zp, keep_brightest, effective_gain,detection_sigma)
+    photometry(ref_img_path, paths, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, None, phot_zp, keep_brightest, effective_gain,detection_sigma)
