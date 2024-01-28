@@ -44,7 +44,7 @@ def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulu
         batch_phot_table['timestamp'] = im[0].header['DATE-OBS']
         batch_phot_table['filter'] = im[0].header['FILTER']
 
-        annulus_stats = [ApertureStats(im, ann_ap) for ann_ap in all_annulus]
+        annulus_stats = [ApertureStats(im[0], ann_ap) for ann_ap in all_annulus]
         bkg_median = [stat.median for stat in annulus_stats]
 
         #aperture_areas = []
@@ -59,7 +59,7 @@ def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulu
 
             # annulus background calculations
             # the following line used to have "img" (the ref img) instead of "im" (the current img), changed on 1/27/24
-            aperture_area = [ap.area_overlap(im) for ap in all_apertures[ap_num]]
+            aperture_area = [ap.area_overlap(im[0]) for ap in all_apertures[ap_num]]
 
             # compute background total_bkg & phot_bkgsub
             total_bkg = [bkg_median[0][i] * aperture_area[i] for i in range(len(all_apertures[ap_num]))]        
