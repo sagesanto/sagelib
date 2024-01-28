@@ -21,8 +21,8 @@ from multiprocessing import Pool
 def add_err_img(filename,bkg_std_dev,effective_gain):
     with fits.open(filename, 'update') as hdu:
         if len(hdu) == 1:
-            print("Datatype:",hdu[0].data.dtype)
-            err_img = calc_total_error(hdu[0].data, bkg_std_dev, effective_gain)
+            # print("Datatype:",hdu[0].data.dtype)
+            err_img = calc_total_error(hdu[0].data.astype(np.float64), bkg_std_dev, effective_gain)
             err_hdu = fits.ImageHDU(err_img.astype(np.float32))
             err_hdu.header['EXTNAME'] = ('UNCERT', 'extension name')
             hdu.append(err_hdu)
@@ -33,7 +33,7 @@ def add_err_img(filename,bkg_std_dev,effective_gain):
 def _photometry(img_path, all_apertures, all_annulus, phot_zp):
     try:
         with fits.open(img_path) as im:
-            batch_phot_table = aperture_photometry(im[0].data, all_apertures, im[1].data)
+            batch_phot_table = aperture_photometry(im[0].data.astype(np.float64), all_apertures, im[1].data.astype(np.float64))
             
             # This loops through all of the columns in the aperture_phot_table to reformat the output :
             for col in batch_phot_table.colnames:
@@ -127,8 +127,8 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
 
     # load reference image
     hdu = fits.open(Path(ref_img_path))
-    ref_detect = hdu[0].data
-    ref_err = hdu[1].data
+    ref_detect = hdu[0].data.astype(np.float64)
+    ref_err = hdu[1].data.astype(np.float64)
     ref_detect_header = hdu[0].header
     hdu.close()
 
