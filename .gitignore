@@ -1,7 +1,9 @@
 calib_config.txt
 utc_dates.csv
+cb_phot_pipeline.ipynb
 
 test/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
