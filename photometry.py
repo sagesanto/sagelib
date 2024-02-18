@@ -202,27 +202,29 @@ if __name__ == "__main__":
     ap_radius = 2
     ann_radius_inner = 4
     ann_radius_outer = 6
-    radii = [2,3]
-    output_csv_dir = "/Volumes/TMO_Data_18/Sage/sagelib/test"
-    output_csv_name = "photometry_test.csv"
+    radii = [1,2,3,4,5,6,7,8]
+    output_csv_dir = "/Volumes/TMO_Data_18/Sage/tmo_hd_21844"
+    output_csv_name = "photometry_2_17_24_fwhm_14.csv"
     bkg_std_dev = 10
     phot_zp = 25
     keep_brightest = 10
     effective_gain = 0.8
     detection_sigma = 3
-    fwhm = 14
+    stellar_fwhm = 14
 
+    df, num, duration, num_failed = photometry(ref_img_path, paths, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, stellar_fwhm, phot_zp, keep_brightest, effective_gain, detection_sigma)
+    print(f"Done with photometry on {num} images in {duration} seconds. {num_failed} failed.")
 
-    num_images = [10, 50, 100]
-    durations = []
+    # num_images = [10, 50, 100]
+    # durations = []
 
-    for num in num_images:
-        selected_images = random.sample(paths, num)
-        df, num, duration, num_failedd = photometry(ref_img_path, selected_images, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, fwhm, phot_zp, keep_brightest, effective_gain, detection_sigma)
-        durations.append(duration)
+    # for num in num_images:
+    #     selected_images = random.sample(paths, num)
+    #     df, num, duration, num_failed = photometry(ref_img_path, selected_images, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, stellar_fwhm, phot_zp, keep_brightest, effective_gain, detection_sigma)
+    #     durations.append(duration)
 
-    plt.scatter(num_images, durations)
-    plt.xlabel('Number of Images')
-    plt.ylabel('Runtime (s)')
-    plt.title('Photometry Performance')
-    plt.show()
+    # plt.scatter(num_images, durations)
+    # plt.xlabel('Number of Images')
+    # plt.ylabel('Runtime (s)')
+    # plt.title('Photometry Performance')
+    # plt.show()
