@@ -5,7 +5,7 @@ from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photo
 from photutils.detection import DAOStarFinder
 from astropy.io import fits
 import numpy as np
-import sys, os, glob
+import sys, os, glob, time
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +43,6 @@ def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulu
             # add timestamp + filter info
             batch_phot_table['timestamp'] = im[0].header['DATE-OBS']
             batch_phot_table['filter'] = im[0].header['FILTER']
-            print(im[0].data.shape)
             annulus_stats = [ApertureStats(im[0].data, ann_ap) for ann_ap in all_annulus]
             bkg_median = [stat.median for stat in annulus_stats]
 
@@ -110,7 +109,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
         # find stars in reference frame
         # get positions of sources in reference frame, make list
         # make annuli and apertures
-
+    start = time.perf_counter()
     # add error img to reference img if it does not already have one:
     add_err_img(ref_img_path, bkg_std_dev, effective_gain)
     ref_frame = Frame.from_fits(ref_img_path)
@@ -180,7 +179,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
     # combine results into a csv
     failed = [k for d in df_dict for k, v in d.items() if v is None]
     print(f"Failed to do photometry on {len(failed)} images: {failed}")
-    df_all = pd.concat([k for d in df_dict for k, v in d.items() if v is not None])
+    df_all = pd.concat([v for d in df_dict for _, v in d.items() if v is not None])
     try:
         df_all["timestamp"] = pd.to_datetime(df_all["timestamp"],infer_datetime_format=True)
     except:
@@ -188,7 +187,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
     df_all.sort_values(by=['timestamp'],inplace=True)
     df_all.to_csv(os.path.join(output_csv_dir,output_csv_name), index=False)
 
-    print("Done with photometry.")
+    print(f"Done with photometry on {len(img_paths)} in {time.perf_counter()-start} seconds.")
     return df_all
 
 
