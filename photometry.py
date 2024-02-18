@@ -194,6 +194,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
     import random
     img_dir = "/Volumes/TMO_Data_18/Sage/sagelib/test/photometry_test"
     paths = sorted(glob.glob(os.path.join(img_dir,"*.fits")))
@@ -209,11 +210,9 @@ if __name__ == "__main__":
     keep_brightest = 10
     effective_gain = 0.8
     detection_sigma = 3
-    num_images = [10, 50, 100, 200, 500]
 
-    import matplotlib.pyplot as plt
 
-    num_images = [10, 50, 100, 200, 500]
+    num_images = [10, 50, 100]
     durations = []
 
     for num in num_images:
