@@ -196,7 +196,7 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import random
-    img_dir = "/Volumes/TMO_Data_18/Sage/sagelib/test/photometry_test"
+    img_dir = "/Volumes/TMO_Data_18/Sage/tmo_hd_21844/data/reduced"
     paths = sorted(glob.glob(os.path.join(img_dir,"*.fits")))
     ref_img_path = paths[0]
     ap_radius = 2
