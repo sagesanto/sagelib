@@ -31,52 +31,52 @@ def add_err_img(filename,bkg_std_dev,effective_gain):
             print("Error image already exists in",filename," - not adding a new one")
 
 def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulus, phot_zp):
-    # try:
-    add_err_img(img_path, bkg_std_dev, effective_gain)
-    with fits.open(img_path) as im:
-        batch_phot_table = aperture_photometry(im[0].data.astype(np.float64), all_apertures, im[1].data.astype(np.float64))
-        
-        # This loops through all of the columns in the aperture_phot_table to reformat the output :
-        for col in batch_phot_table.colnames:
-            batch_phot_table[col].info.format = '%.8g'  # for consistent table output
-
-        # add timestamp + filter info
-        batch_phot_table['timestamp'] = im[0].header['DATE-OBS']
-        batch_phot_table['filter'] = im[0].header['FILTER']
-        print(im[0].data.shape)
-        annulus_stats = [ApertureStats(im[0].data, ann_ap) for ann_ap in all_annulus]
-        bkg_median = [stat.median for stat in annulus_stats]
-
-        #aperture_areas = []
-        for ap_num in range(len(all_apertures)):
-            # Name the new columns
-            aperture_sum_title = 'aperture_sum_' + str(ap_num)  # This is not written out, it is read it.  Others below are written out.
-            aperture_sum_err_title = 'aperture_sum_err_' + str(ap_num) 
-            skyflux_title = 'skyflux_' + str(ap_num)
-            objflux_title = 'objflux_' + str(ap_num)
-            mag_title = 'mag_' + str(ap_num)
-            magerr_title = 'mag_err_' + str(ap_num)
-
-            # annulus background calculations
-            # the following line used to have "img" (the ref img) instead of "im" (the current img), changed on 1/27/24
-            # changed from im[0] back to img
-            aperture_area = [ap.area_overlap(im[0].data.astype(np.float64)) for ap in all_apertures[ap_num]]
-
-            # compute background total_bkg & phot_bkgsub
-            total_bkg = [bkg_median[0][i] * aperture_area[i] for i in range(len(all_apertures[ap_num]))]        
-            phot_bkgsub = batch_phot_table[aperture_sum_title] - total_bkg
-            batch_phot_table[skyflux_title] = total_bkg
-            batch_phot_table[objflux_title] = phot_bkgsub
+    try:
+        add_err_img(img_path, bkg_std_dev, effective_gain)
+        with fits.open(img_path) as im:
+            batch_phot_table = aperture_photometry(im[0].data.astype(np.float64), all_apertures, im[1].data.astype(np.float64))
             
-            # compute instrumental (uncalibrated) magnitude from aperture sum
-            mag = -2.5 * np.log10(phot_bkgsub) + phot_zp
-            batch_phot_table[mag_title] = mag
-            batch_phot_table[magerr_title] = 1.0875*(batch_phot_table[aperture_sum_err_title]/batch_phot_table[objflux_title])  
-    print(f"Completed photometry on {img_path}.")
-    return {img_path: batch_phot_table.to_pandas()}
-    # except Exception as e:
-    #     print(f"Failed to do photometry on {img_path}. Error: {e}")
-        # return {img_path: None}
+            # This loops through all of the columns in the aperture_phot_table to reformat the output :
+            for col in batch_phot_table.colnames:
+                batch_phot_table[col].info.format = '%.8g'  # for consistent table output
+
+            # add timestamp + filter info
+            batch_phot_table['timestamp'] = im[0].header['DATE-OBS']
+            batch_phot_table['filter'] = im[0].header['FILTER']
+            print(im[0].data.shape)
+            annulus_stats = [ApertureStats(im[0].data, ann_ap) for ann_ap in all_annulus]
+            bkg_median = [stat.median for stat in annulus_stats]
+
+            #aperture_areas = []
+            for ap_num in range(len(all_apertures)):
+                # Name the new columns
+                aperture_sum_title = 'aperture_sum_' + str(ap_num)  # This is not written out, it is read it.  Others below are written out.
+                aperture_sum_err_title = 'aperture_sum_err_' + str(ap_num) 
+                skyflux_title = 'skyflux_' + str(ap_num)
+                objflux_title = 'objflux_' + str(ap_num)
+                mag_title = 'mag_' + str(ap_num)
+                magerr_title = 'mag_err_' + str(ap_num)
+
+                # annulus background calculations
+                # the following line used to have "img" (the ref img) instead of "im" (the current img), changed on 1/27/24
+                # changed from im[0] back to img
+                aperture_area = [ap.area_overlap(im[0].data.astype(np.float64)) for ap in all_apertures[ap_num]]
+
+                # compute background total_bkg & phot_bkgsub
+                total_bkg = [bkg_median[0][i] * aperture_area[i] for i in range(len(all_apertures[ap_num]))]        
+                phot_bkgsub = batch_phot_table[aperture_sum_title] - total_bkg
+                batch_phot_table[skyflux_title] = total_bkg
+                batch_phot_table[objflux_title] = phot_bkgsub
+                
+                # compute instrumental (uncalibrated) magnitude from aperture sum
+                mag = -2.5 * np.log10(phot_bkgsub) + phot_zp
+                batch_phot_table[mag_title] = mag
+                batch_phot_table[magerr_title] = 1.0875*(batch_phot_table[aperture_sum_err_title]/batch_phot_table[objflux_title])  
+        print(f"Completed photometry on {img_path}.")
+        return {img_path: batch_phot_table.to_pandas()}
+    except Exception as e:
+        print(f"Failed to do photometry on {img_path}. Error: {e}")
+        return {img_path: None}
 
 
 
