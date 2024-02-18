@@ -186,13 +186,15 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
         pass
     df_all.sort_values(by=['timestamp'],inplace=True)
     df_all.to_csv(os.path.join(output_csv_dir,output_csv_name), index=False)
-
-    print(f"Done with photometry on {len(img_paths)} in {time.perf_counter()-start} seconds.")
-    return df_all
+    duration = time.perf_counter() - start
+    print(f"Done with photometry on {len(img_paths)} images in {duration} seconds.")
+    print(f"{len(img_paths)}, {duration}, {len(failed)}", file=open(os.path.join(output_csv_dir,"photometry_log.txt"), "a"))
+    print(f"{len(img_paths)}, {duration}, {len(failed)}")
+    return df_all, len(img_paths), duration, len(failed)
 
 
 if __name__ == "__main__":
-    # testing, using set values for now
+    import random
     img_dir = "/Volumes/TMO_Data_18/Sage/sagelib/test/photometry_test"
     paths = sorted(glob.glob(os.path.join(img_dir,"*.fits")))
     ref_img_path = paths[0]
@@ -207,4 +209,20 @@ if __name__ == "__main__":
     keep_brightest = 10
     effective_gain = 0.8
     detection_sigma = 3
-    photometry(ref_img_path, paths, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, None, phot_zp, keep_brightest, effective_gain,detection_sigma)
+    num_images = [10, 50, 100, 200, 500]
+
+    import matplotlib.pyplot as plt
+
+    num_images = [10, 50, 100, 200, 500]
+    durations = []
+
+    for num in num_images:
+        selected_images = random.sample(paths, num)
+        df, num, duration, num_failedd = photometry(ref_img_path, selected_images, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, None, phot_zp, keep_brightest, effective_gain, detection_sigma)
+        durations.append(duration)
+
+    plt.scatter(num_images, durations)
+    plt.xlabel('Number of Images')
+    plt.ylabel('Runtime (s)')
+    plt.title('Photometry Performance')
+    plt.show()
