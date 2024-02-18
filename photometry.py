@@ -210,6 +210,7 @@ if __name__ == "__main__":
     keep_brightest = 10
     effective_gain = 0.8
     detection_sigma = 3
+    fwhm = 14
 
 
     num_images = [10, 50, 100]
@@ -217,7 +218,7 @@ if __name__ == "__main__":
 
     for num in num_images:
         selected_images = random.sample(paths, num)
-        df, num, duration, num_failedd = photometry(ref_img_path, selected_images, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, None, phot_zp, keep_brightest, effective_gain, detection_sigma)
+        df, num, duration, num_failedd = photometry(ref_img_path, selected_images, ap_radius, ann_radius_inner, ann_radius_outer, radii, output_csv_dir, output_csv_name, bkg_std_dev, fwhm, phot_zp, keep_brightest, effective_gain, detection_sigma)
         durations.append(duration)
 
     plt.scatter(num_images, durations)
