@@ -178,9 +178,9 @@ def photometry(ref_img_path, img_paths, ap_radius, ann_radius_inner, ann_radius_
     with Pool() as pool:
         df_dict = pool.starmap(_photometry, [(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulus, phot_zp) for img_path in img_paths])
     # combine results into a csv
-    failed = [k for k,v in df_dict if v is None]
+    failed = [k for d in df_dict for k, v in d.items() if v is None]
     print(f"Failed to do photometry on {len(failed)} images: {failed}")
-    df_all = pd.concat([v for _,v in df_dict if v is not None])
+    df_all = pd.concat([k for d in df_dict for k, v in d.items() if v is not None])
     try:
         df_all["timestamp"] = pd.to_datetime(df_all["timestamp"],infer_datetime_format=True)
     except:
