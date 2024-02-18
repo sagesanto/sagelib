@@ -59,7 +59,8 @@ def _photometry(img_path, bkg_std_dev, effective_gain, all_apertures, all_annulu
 
             # annulus background calculations
             # the following line used to have "img" (the ref img) instead of "im" (the current img), changed on 1/27/24
-            aperture_area = [ap.area_overlap(im[0]) for ap in all_apertures[ap_num]]
+            # changed from im[0] back to img
+            aperture_area = [ap.area_overlap(im[0].data.astype(np.float64)) for ap in all_apertures[ap_num]]
 
             # compute background total_bkg & phot_bkgsub
             total_bkg = [bkg_median[0][i] * aperture_area[i] for i in range(len(all_apertures[ap_num]))]        
