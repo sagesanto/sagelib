@@ -59,7 +59,7 @@ class PipelineDB:
         "InputFITS"     TEXT NOT NULL,
         "LogFilepath"   TEXT,
         "ID"    INT NOT NULL,
-        PRIMARY KEY ("ID"), 
+        PRIMARY KEY ("ID") 
         )"""
         self.execute(pipeline_run_stmnt)
 
