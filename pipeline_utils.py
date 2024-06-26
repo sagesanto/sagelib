@@ -1,6 +1,5 @@
 import sys, os
 import json
-import astromatic_wrapper as aw
 import numpy as np
 import logging
 
@@ -11,6 +10,7 @@ def mod(path): return os.path.join(MODULE_PATH,path)
 
 
 def ldac_to_table(fits_file,frame=1):
+    import astromatic_wrapper as aw
     return aw.utils.ldac.get_table_from_ldac(fits_file, frame=frame)
 
 def configure_logger(name,outfile_path):
@@ -26,7 +26,7 @@ def configure_logger(name,outfile_path):
     logger = logging.getLogger(name)
     file_handler = logging.FileHandler(outfile_path,mode="a+")
     logger.addHandler(file_handler)
-    
+
     return logger
 
 def check_sextractor_flags(flag, bad_flags = BAD_SEX_FLAGS):
