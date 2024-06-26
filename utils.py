@@ -31,7 +31,7 @@ STRFTIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 def string_to_time(dt:datetime, fname=False):
     """ Use standard module format to convert string to time """
-    timestr = dt.strftime(STRFTIME_FORMAT)
+    timestr = dt.strptime(STRFTIME_FORMAT)
     if fname:
         timestr = multi_replace(timestr,("-",":"," "),"_")
     return timestr
@@ -45,7 +45,7 @@ def time_to_string(timestr:str, from_fname=False):
     fmt = STRFTIME_FORMAT
     if from_fname:
         fmt = multi_replace(fmt,("-",":"," "),"_")
-    return datetime.strptime(timestr, fmt)
+    return datetime.strftime(timestr, fmt)
 
 def tts(timestr:str, from_fname=False):
     """alias for time_to_string"""
