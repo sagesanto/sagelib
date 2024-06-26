@@ -151,5 +151,5 @@ class Pipeline:
         self.db.record_pipeline_end(self.pipeline_id,utils.current_dt_utc())
 
 if __name__ == "__main__":
-    pipeline = Pipeline("test",["test"],"test",".","Subaru","test_config.toml","test.db",0)
+    pipeline = Pipeline("test",[],"test",".","Subaru","test_config.toml","test.db",0)
     # db = PipelineDB()
