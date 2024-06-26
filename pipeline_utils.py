@@ -18,7 +18,6 @@ def ldac_to_table(fits_file,frame=1):
 def configure_logger(name, outfile_path):
     # first, check if the logger has already been configured
     if logging.getLogger(name).hasHandlers():
-        print("already have handlers")
         return logging.getLogger(name)
     try:
         with open(mod("logging.json"), 'r') as log_cfg:

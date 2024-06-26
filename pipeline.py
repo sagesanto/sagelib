@@ -50,8 +50,7 @@ class PipelineDB:
         "EndTimeUTC"    TEXT NOT NULL,
         "StatusCodes"   INT NOT NULL,
         "PipelineRunID"     INT NOT NULL,
-        "ID"    INT NOT NULL,
-        PRIMARY KEY ("ID"), 
+        "ID"    INTEGER PRIMARY KEY,
         FOREIGN KEY("PipelineRunID") REFERENCES "PipelineRuns" ("ID")
         )"""
         self.execute(task_run_stmnt)
@@ -59,9 +58,12 @@ class PipelineDB:
         pipeline_run_stmnt = """
         CREATE TABLE IF NOT EXISTS "PipelineRuns" (
         "PipelineName"    TEXT NOT NULL,
-        "PipelineVersion"    TEXT NOT NULL,
         "StartTimeUTC"    TEXT NOT NULL,
-        "EndTimeUTC"    TEXT,
+        "EndTimeUTC"      TEXT,
+        "Success"         INT,
+        "FailedTasks"     TEXT,
+        "CrashedTasks"     TEXT,
+        "PipelineVersion"    TEXT NOT NULL,
         "Config"    TEXT NOT NULL,
         "InputFITS"     TEXT NOT NULL,
         "LogFilepath"   TEXT,
@@ -78,11 +80,12 @@ class PipelineDB:
         self.execute(insert_stmt,vals=(taskname,start_str,end_str,status_codes,pipeline_run_id))
         self.conn.commit()
 
-    def record_pipeline_start(self, pipeline_name, pipeline_version, start_dt, config_str, input_fits_str, log_filepath=None):
+    def record_pipeline_start(self, pipeline_name, pipeline_version, start_dt, config, input_fits, log_filepath=None):
         start_str = utils.tts(utils.dt_to_utc(start_dt))
+        config_str = str(config)
+        input_fits_str = str(input_fits)
         pipeline_id = self.get_next_pipeline_id()
         if log_filepath:
-            print(log_filepath)
             insert_stmt = "INSERT INTO PipelineRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,LogFilepath,ID) VALUES (?,?,?,?,?,?,?)"
             self.execute(insert_stmt,(pipeline_name,pipeline_version,start_str,config_str,input_fits_str,log_filepath,pipeline_id))
             return pipeline_id
@@ -91,10 +94,12 @@ class PipelineDB:
         self.conn.commit()
         return pipeline_id
     
-    def record_pipeline_end(self,pipeline_run_id,end_dt):
+    def record_pipeline_end(self,pipeline_run_id,end_dt, success, failed, crashed):
         end_str = utils.tts(utils.dt_to_utc(end_dt))
-        update_stmt = "UPDATE PipelineRuns SET EndTimeUTC = ? WHERE ID = ?"
-        self.execute(update_stmt,(end_str,pipeline_run_id))
+        failed = ",".join(failed)
+        crashed = ",".join(crashed)
+        update_stmt = "UPDATE PipelineRuns SET EndTimeUTC = ?, Success = ?, FailedTasks = ?, CrashedTasks = ? WHERE ID = ?"
+        self.execute(update_stmt, (end_str, success, failed, crashed, pipeline_run_id))
         self.conn.commit()
     
     def close(self):
@@ -106,19 +111,23 @@ class PipelineDB:
 
 
 class Task(ABC):
-    def __init__(self, name, profile, outdir):
+    def __init__(self, name):
         self.name = name
-        self.profile = profile
-        self.outdir = outdir
+        self.config = None
+        self.outdir = None
         self.logger = None
-    
+
     @abstractmethod
-    def __call__(self, fitslist, logfile):
+    def __call__(self, fitslist, outdir, config, logfile, pipeline_run_id) -> int:
         self.logger = pipeline_utils.configure_logger(self.name, logfile)
+        self.outdir, self.config, self.pipeline_run_id = outdir, config, pipeline_run_id
+
+    def outpath(self, file): return os.path.join(self.outdir, file)
 
     @property
     @abstractmethod
-    def required_profile_keys(self):
+    def required_params(self):
+        """Return a list of keys that must be in the config or set by a prior pipeline task for this one to work"""
         pass
 
     @property
@@ -126,39 +135,162 @@ class Task(ABC):
     def description(self):
         pass
 
+    @property
+    @abstractmethod
+    def will_set(self):
+        """Return a list of keys in the config that this task will set while running"""
+        pass
+
+
 
 class Pipeline:
-    def __init__(self, pipeline_name, tasks, fitslist, outdir, profile_name, config_path, dbpath, version):
+    def __init__(self, pipeline_name, tasks, fitslist, outdir, profile_name, config_path, version, default_cfg_path=None):
         self.name = pipeline_name
         self.tasks = tasks
         self.fitslist = fitslist
         self.outdir = outdir
+        os.makedirs(outdir,exist_ok=True)
         self.profile_name = profile_name
-        self.config = utils.read_config(config_path)[profile_name]
-        self.dbpath = dbpath
+        self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH") # this is the global config in the file
+        self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = os.path.abspath(os.path.join(outdir,f"{self.name}.log"))
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
-        self.db = PipelineDB(dbpath, self.logger)
+        self.dbpath = self.config("DB_PATH")
+        self.db = PipelineDB(self.dbpath, self.logger)
         self.version = version
+        self.failed = []
+        self.crashed = []
         self.pipeline_id = None
+        self.success = None
+        if default_cfg_path:
+            self.config.load_defaults(default_cfg_path)
+
+        self.validate_pipeline()
+    
+    def validate_pipeline(self):
+        # check configuration keys
+        missing = {}
+        req = self.get_required_keys()
+        set_by_tasks = []
+        for task, keys in self.get_required_keys().items():
+            for key in keys:
+                try:
+                    self.config[key]
+                except Exception:
+                    # this means we didn't find the key in the config. 
+                    # this is ok if the key will instead be set by a task that runs before this one
+                    if key not in set_by_tasks:
+                        if missing.get(task.name):
+                            missing[task.name].append(key)
+                        else:
+                            missing[task.name] = [key]
+            will_be_set = task.will_set
+            if will_be_set:
+                if isinstance(will_be_set,str):
+                    set_by_tasks.append(will_be_set)
+                else:
+                    set_by_tasks.extend(will_be_set)
+
+        if missing:
+            raise AttributeError(f"Tasks are missing config keys: {missing}")
+
+    def get_required_keys(self):
+        keywords = {}
+        for task in self.tasks:
+            keywords[task] = task.required_params
+        return keywords
+
     
     def run(self):
-        self.pipeline_id = self.db.record_pipeline_start(self.name,self.version,utils.current_dt_utc(),f"{self.profile_name}: " + str(self.config),str(self.fitslist),self.logfile)
+        self.succeeded = []
+        self.failed = []
+        self.crashed = []
+        self.pipeline_id = None
+        self.success = None
+        self.pipeline_id = self.db.record_pipeline_start(self.name,self.version,utils.current_dt_utc(),self.config,self.fitslist,self.logfile)
         self.logger.info(f"Beginning run {self.pipeline_id} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
             start_dt = utils.current_dt_utc()
-            self.logger.info(f"Began task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(start_dt)} UTC")
+            self.logger.info(f"Began task '{task.name}' ({i+1}/{len(self.tasks)}) at {utils.tts(start_dt)} UTC")
             codes = -1
             try:
-                codes = task(self.fitslist, self.logfile)
+                codes = task(self.fitslist, self.outdir, self.config, self.logfile, self.pipeline_id)
+                if codes != 0:
+                    self.logger.error(f"Got nonzero exit code from task {task.name}: {codes}! Exiting.")
+                    self.failed.append(task.name)
+                    break
+                self.succeeded.append(task.name)
             except Exception as e:
                 self.logger.exception(f"Uh oh. Got exception running task {task.name}")
+                self.failed.append(task.name)
+                self.crashed.append(task.name)
             end_dt = utils.current_dt_utc()
-            self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(end_dt)} UTC with codes {codes}")
+            if codes != 0:
+                self.logger.error(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(end_dt)} UTC (duration: {end_dt-start_dt}) with code(s) {codes}")
+            else:
+                self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(end_dt)} UTC (duration: {end_dt-start_dt}) with code(s) {codes}")
             self.db.record_task(task.name,start_dt,end_dt,codes,self.pipeline_id)
-        self.logger.info(f"Finished run {self.pipeline_id} (pipeline {self.name} v{self.version}) at {utils.tts(utils.current_dt_utc())}")
-        self.db.record_pipeline_end(self.pipeline_id,utils.current_dt_utc())
+        self.success = len(self.failed)==0
+        if self.success:
+            self.logger.info(f"Successfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version}) at {utils.tts(utils.current_dt_utc())}")
+        else:
+            self.logger.error(f"Unsuccessfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version}) at {utils.tts(utils.current_dt_utc())}")
+            self.logger.error(f"Failed: {', '.join(self.failed)}")
+            if self.crashed:
+                self.logger.error(f"Crashed: {', '.join(self.crashed)}")
+            else:
+                self.logger.info("No crashes.")
+        self.logger.info(f"Succeeded: {self.succeeded}")
+        self.db.record_pipeline_end(self.pipeline_id,utils.current_dt_utc(),self.success,self.failed,self.crashed)
+        return self.success
 
 if __name__ == "__main__":
-    pipeline = Pipeline("test",[],"test","./test/pipeline","Subaru","test_config.toml","test/pipeline/test.db",0)
-    pipeline.run()
+    class TestTaskOne(Task):
+        def __call__(self, fitslist, outdir, config, logfile, pipeline_run_id):
+            super().__call__(fitslist, outdir, config, logfile, pipeline_run_id)
+            self.logger.info("hi")
+            self.logger.info(self.config)
+            self.logger.info(repr(self.config))
+            self.logger.info(self.config("TEST_GLOBAL")) 
+            self.logger.info(self.config("TEST_TEST")) 
+            self.logger.info(self.config("TEST_DEFAULT"))
+            self.config.set("TEST_SET_ONE","test task one set this!")
+            # raise RuntimeError("I'm going to crash now!")
+            return 0
+        
+        @property
+        def required_params(self):
+            return ["TEST_GLOBAL","TEST_TEST", "TEST_DEFAULT"]
+        
+        @property
+        def will_set(self):
+            return ["TEST_SET_ONE"]
+
+        @property
+        def description(self):
+            return "A test task"
+    
+
+    class TestTaskTwo(Task):
+        def __call__(self, fitslist, outdir, config, logfile, pipeline_run_id):
+            super().__call__(fitslist, outdir, config, logfile, pipeline_run_id)
+            self.logger.info(self.config("TEST_SET_ONE"))
+            return 0
+        
+        @property
+        def required_params(self):
+            return ["TEST_SET_ONE"]
+
+        @property
+        def will_set(self):
+            return None
+
+        @property
+        def description(self):
+            return "A test task"
+
+
+    test_task_one = TestTaskOne("test task one")
+    test_task_two = TestTaskTwo("test task two")
+    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],"no fits files","./test/pipeline","Test","./test/pipeline/test_config.toml",0, default_cfg_path="./test/pipeline/defaults.toml")
+    success = pipeline.run()
