@@ -105,18 +105,18 @@ class Task(ABC):
     def __call__(self, fitslist, logfile):
         self.logger = pipeline_utils.configure_logger(self.name, logfile)
 
-    @abstractmethod
     @property
+    @abstractmethod
     def required_profile_keys(self):
         pass
 
-    @abstractmethod
     @property
+    @abstractmethod
     def description(self):
         pass
 
 
-class Pipeline():
+class Pipeline:
     def __init__(self, pipeline_name, tasks, fitslist, outdir, profile_name, config_path, dbpath, version):
         self.name = pipeline_name
         self.tasks = tasks
