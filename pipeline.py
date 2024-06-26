@@ -34,7 +34,7 @@ class PipelineDB:
             self.cur.execute(sql_statement)
 
     def get_next_pipeline_id(self):
-        self.execute("SELECT ID FROM PipelineRuns ORDER BY ID DESC; LIMIT 1")
+        self.execute("SELECT ID FROM PipelineRuns ORDER BY ID DESC LIMIT 1")
         return self.cur.fetchone()
     
     def make_tables(self):
