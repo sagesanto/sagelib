@@ -35,7 +35,10 @@ class PipelineDB:
 
     def get_next_pipeline_id(self):
         self.execute("SELECT ID FROM PipelineRuns ORDER BY ID DESC LIMIT 1")
-        return self.cur.fetchone()
+        res = self.cur.fetchone()
+        if res is None:
+            res = 0
+        return res
     
     def make_tables(self):
         task_run_stmnt = """
