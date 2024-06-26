@@ -1,11 +1,12 @@
 import tomli
 from datetime import datetime, timedelta
-from datetime import UTC as dtUTC
+# from datetime import UTC as dtUTC
 import pytz
+from pytz import UTC
 
 
 def current_dt_utc():
-    return datetime.now(dtUTC)
+    return datetime.now(UTC)
 
 def dt_to_tz(dt, tz, require_existing_timezone=False):
     if require_existing_timezone and dt.tzinfo is None:
@@ -15,7 +16,7 @@ def dt_to_tz(dt, tz, require_existing_timezone=False):
     return dt.astimezone(tz)
 
 def dt_to_utc(dt, require_existing_timezone=False):
-    return dt_to_tz(dt, pytz.UTC, require_existing_timezone)
+    return dt_to_tz(dt, UTC, require_existing_timezone)
 
 def read_config(config_path):
     with open(config_path, "rb") as f:

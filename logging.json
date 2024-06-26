@@ -19,16 +19,24 @@
             "datefmt": "%m/%d/%Y %H:%M:%S"
         }
     },
+    "filters":{
+    },
     "handlers": {
         "stream": {
             "class": "logging.StreamHandler",
             "formatter": "colored",
             "level": "INFO",
             "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "filename": "should_be_set_by_code.log",
+            "formatter": "simple",
+            "level": "INFO"
         }
     },
     "root": {
         "level": "DEBUG",
-        "handlers": ["stream"]
+        "handlers": ["stream","file"]
     }
 }

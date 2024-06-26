@@ -37,8 +37,10 @@ class PipelineDB:
         self.execute("SELECT ID FROM PipelineRuns ORDER BY ID DESC LIMIT 1")
         res = self.cur.fetchone()
         if res is None:
-            res = 0
-        return res
+            res = -1
+        else:
+            res = res["ID"]
+        return res + 1
     
     def make_tables(self):
         task_run_stmnt = """
@@ -74,22 +76,26 @@ class PipelineDB:
 
         insert_stmt = "INSERT INTO TaskRuns (TaskName,StartTimeUTC,EndTimeUTC,StatusCodes,PipelineRunID) VALUES (?,?,?,?,?)"
         self.execute(insert_stmt,vals=(taskname,start_str,end_str,status_codes,pipeline_run_id))
-    
+        self.conn.commit()
+
     def record_pipeline_start(self, pipeline_name, pipeline_version, start_dt, config_str, input_fits_str, log_filepath=None):
         start_str = utils.tts(utils.dt_to_utc(start_dt))
         pipeline_id = self.get_next_pipeline_id()
         if log_filepath:
+            print(log_filepath)
             insert_stmt = "INSERT INTO PipelineRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,LogFilepath,ID) VALUES (?,?,?,?,?,?,?)"
-            self.execute(insert_stmt,(pipeline_name,pipeline_version,start_dt,config_str,input_fits_str,log_filepath, pipeline_id))
+            self.execute(insert_stmt,(pipeline_name,pipeline_version,start_str,config_str,input_fits_str,log_filepath,pipeline_id))
             return pipeline_id
         insert_stmt = "INSERT INTO PipelineRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,ID) VALUES (?,?,?,?,?,?)"
-        self.execute(insert_stmt,(pipeline_name,pipeline_version,start_dt,config_str,input_fits_str, pipeline_id))
+        self.execute(insert_stmt,(pipeline_name,pipeline_version,start_str,config_str,input_fits_str, pipeline_id))
+        self.conn.commit()
         return pipeline_id
     
     def record_pipeline_end(self,pipeline_run_id,end_dt):
         end_str = utils.tts(utils.dt_to_utc(end_dt))
         update_stmt = "UPDATE PipelineRuns SET EndTimeUTC = ? WHERE ID = ?"
         self.execute(update_stmt,(end_str,pipeline_run_id))
+        self.conn.commit()
     
     def close(self):
         self.conn.close()
@@ -154,5 +160,5 @@ class Pipeline:
         self.db.record_pipeline_end(self.pipeline_id,utils.current_dt_utc())
 
 if __name__ == "__main__":
-    pipeline = Pipeline("test",[],"test",".","Subaru","test_config.toml","test.db",0)
+    pipeline = Pipeline("test",[],"test","./test/pipeline","Subaru","test_config.toml","test/pipeline/test.db",0)
     pipeline.run()
