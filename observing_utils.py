@@ -11,8 +11,14 @@ from astropy.io import ascii
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
 from datetime import datetime, timedelta, timezone
+from datetime import UTC as dtUTC
 from astropy.time import Time
 import pytz
+from . import utils
+
+# util re-exports
+current_dt_utc = utils.current_dt_utc
+
 
 # globals
 
@@ -22,10 +28,10 @@ sidereal_rate = 360 / (23 * 3600 + 56 * 60 + 4.091)  # deg/second
 
 
 def get_current_sidereal_time(locationInfo):
-    now = datetime.utcnow().replace(second=0, microsecond=0)
+    now = current_dt_utc().replace(second=0, microsecond=0)
     return Time(now).sidereal_time('mean', longitude=locationInfo.longitude)
 
-def get_sunrise_sunset(locationInfo, dt=datetime.utcnow(), jd=False):
+def get_sunrise_sunset(locationInfo, dt=current_dt_utc(), jd=False):
     """!
     get sunrise and sunset for given location at given time
     @return: sunriseUTC, sunsetUTC
@@ -59,14 +65,14 @@ def siderealToDate(siderealAngle: Angle, current_sidereal_time: Angle):
     # find the difference between the sidereal observability start time and the sidereal start time of the program
     siderealFromStart = siderealAngle - current_sidereal_time
     # add that offset to the utc start time of the program (we know siderealStart is local sidereal time at startTime, so we use it as our reference)
-    timeUTC = datetime.utcnow() + timedelta(
+    timeUTC = current_dt_utc() + timedelta(
         hours=siderealFromStart.hour / 1.0027)  # one solar hour is 1.0027 sidereal hours
 
     return timeUTC.replace(tzinfo=pytz.UTC)
 
 
 def dateToSidereal(dt: datetime, current_sidereal_time):
-    timeDiff = dt - datetime.utcnow().replace(tzinfo=pytz.UTC)
+    timeDiff = dt.astimezone(dtUTC) - current_dt_utc()
     sidereal_factor = 1.0027
     st = current_sidereal_time + Angle(str(timeDiff.total_seconds() * sidereal_factor / 3600) + "h")
     # st = st.wrap_at(360 * u.deg)
@@ -141,7 +147,7 @@ def find_transit_time(RA: Angle, location, target_dt=None, current_sidereal_time
     @return: The transit time of the object as a datetime object.
     @rtype: datetime.datetime
     """
-    currentTime = datetime.utcnow().replace(second=0, microsecond=0).replace(tzinfo=pytz.UTC)
+    currentTime = current_dt_utc().replace(second=0, microsecond=0)
     if current_sidereal_time is None:
         lst = Time(currentTime).sidereal_time('mean', longitude=location.longitude)
     else:
@@ -150,7 +156,7 @@ def find_transit_time(RA: Angle, location, target_dt=None, current_sidereal_time
     target_sidereal_time = dateToSidereal(target_time, lst)
     ha = Angle(wrap_around((RA - target_sidereal_time).deg), unit=u.deg)
     transitTime = target_time + angleToTimedelta(ha)
-    transitTime = transitTime.replace(tzinfo=pytz.UTC)
+    # transitTime = transitTime.replace(tzinfo=pytz.UTC) # this is bad
     return transitTime
 
 def wrap_around(value):
@@ -171,7 +177,7 @@ def get_centroid(points):
     return centroid_x, centroid_y
 
 # get hour angle as an Angle
-def get_hour_angle(ra, dt, current_sidereal_time=None):
+def get_hour_angle(ra, dt, current_sidereal_time):
     sidereal = dateToSidereal(dt, current_sidereal_time)
     # print(sidereal, ra)
     # print(type(sidereal), type(ra))
@@ -193,7 +199,7 @@ def dt_to_jd(datetime):
 #     @return: bool
 #     """
 #     if current_sidereal_time is None:
-#         current_sidereal_time = Time(datetime.utcnow()).sidereal_time('mean', longitude=locationInfo.longitude)
+#         current_sidereal_time = Time(current_dt_utc()).sidereal_time('mean', longitude=locationInfo.longitude)
 #     raWindow, rac = get_RA_window(current_sidereal_time,dt,dec,ra=ra)
 #     # NOTE THE ORDER:
 #     return rac.is_within_bounds(raWindow[0], raWindow[1])

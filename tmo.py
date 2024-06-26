@@ -1,8 +1,8 @@
 import os
 # to run the main function, need to uncomment this line:
-# from observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate
+from observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate, current_dt_utc
 # and comment out this one:
-from sagelib.observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate
+# from sagelib.observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate, current_dt_utc
 import pytz, time
 from datetime import datetime, timedelta, timezone
 from astral import sun, LocationInfo
@@ -60,7 +60,7 @@ class TMO:
             if decRange[0] < dec <= decRange[1]:  # man this is miserable
                 finalDecRange = self.horizon_box[decRange]
                 return tuple([Angle(finalDecRange[0], unit=u.deg), Angle(finalDecRange[1], unit=u.deg)])
-        return None
+        return None        
     
     def static_observability_window(self, RA: Angle, Dec: Angle, target_dt=None,
                               current_sidereal_time=None):
@@ -76,14 +76,14 @@ class TMO:
         """
         current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
 
-        target_dt = target_dt or datetime.utcnow()
-        t = find_transit_time(ensureAngle(float(RA)), self.locationInfo, current_sidereal_time=current_sidereal_time,
+        target_dt = target_dt or current_dt_utc()
+        t = find_transit_time(ensureAngle(RA), self.locationInfo, current_sidereal_time=current_sidereal_time,
                             target_dt=target_dt)
         time_window = (angleToTimedelta(a) for a in self.get_hour_angle_limits(Dec))
         return [t + a for a in time_window]
         # HA = ST - RA -> ST = HA + RA
 
-    def get_sunrise_sunset(self, dt=datetime.utcnow(), jd=False):
+    def get_sunrise_sunset(self, dt=current_dt_utc(), jd=False):
         """!
         get sunrise and sunset for TMO
         @return: sunriseUTC, sunsetUTC
@@ -163,12 +163,11 @@ class TMO:
             mask[i] = self.observation_viable(row[dt_column],row[ra_column],row[dec_column],current_sidereal_time=current_sidereal_time)
         return mask
 
-    def plot_onsky(self, dt=datetime.utcnow().replace(tzinfo=pytz.utc),candidates=None,current_sidereal_time=None, fig=None, ax=None):
+    def plot_onsky(self, dt=current_dt_utc(),candidates=None,current_sidereal_time=None, fig=None, ax=None):
         """ Take a list of candidates, create 2 plots of their observability at dt, and return the figures, axes and artists (to allow animation)"""
         sunrise, sunset = self.get_sunrise_sunset(dt)
         current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
         sidereal = dateToSidereal(dt, current_sidereal_time)
-        # dt = sunset.replace(tzinfo=None)+(sunrise-sunset)/2
         names = [c.CandidateName for c in candidates]
         ras = [c.RA for c in candidates]
         # print("RA type:",type(ras[0]))
@@ -247,8 +246,8 @@ if __name__ == "__main__":
     tmo = TMO()
     lst = get_current_sidereal_time(tmo.locationInfo)
     t = find_transit_time(lst,tmo.locationInfo)
-    print("Current time:",datetime.utcnow())
-    print("Hour angle:",get_hour_angle(lst,t.replace(tzinfo=pytz.utc),lst))
+    print("Current time:",current_dt_utc())
+    print("Hour angle:",get_hour_angle(lst,t,lst))
     print("Transit time:", find_transit_time(RA=lst,location=tmo.locationInfo,target_dt=t))
     c = [Candidate(**{"RA":lst,"Dec":0,'CandidateName':"test"})]
     t = find_transit_time(c[0].RA,tmo.locationInfo) + timedelta(hours=1.5)

@@ -1,0 +1,43 @@
+
+MAX_SEP = 0.6		# exclude from joint catalogs sources in the larger catalog whose nearest matched source is more than MAX_SEP away
+
+[Subaru]
+CATALOG_PATH = "catalogs/better_better_subaru.cat"       # path to subaru SExtractor catalog file
+COADD_FITS = "calibrated/aligned/first_coadd.fits"       # path to subaru coadd fits file from which the catalog was derived
+RA_NAME = "ALPHA_J2000"
+DEC_NAME = "DELTA_J2000"
+MAG_NAME = "MAG_AUTO"
+ZP = 0                              # not yet calculated
+FLAT_RADIUS_MAX = 4     # reject all sources with a px radius greater than this value outright
+FLAT_RADIUS_MIN = 2      # reject all sources with a px radius smaller than this value outright
+MIN_STAR_MAG = -8         # only consider sources with uncalibrated mag between MIN_STAR_MAG and MAX_STAR_MAG for star_band 
+MAX_STAR_MAG = -4       
+FLUX_RADIUS_SIGMA = 1.5       # width of star-band will be 3 * std(flux radius of sources between min and max mag) 
+DEDUPLICATION_KEY = "ang_sep"		# field by which to sort Subaru sources before doing leave-first deduplication of Subaru sources sharing the same Gaia star
+DEDUPLICATION_REVERSE = false		# whether the subaru_deduplication_key sort should be reversed before deduplication
+KEYWORDS = []       # keywords to carry over from this catalog to a joint catalog. will appear as [catalog name]_keyword
+
+[Euclid]
+CATALOG_PATH = "catalogs/euclid_vis_A2390_smaller.cat"		# path to Euclid SExtractor catalog file
+COADD_FITS = "euclid_data/Euclid-VIS-ERO-Abell2390-LSB.DR3.fits"		# path to Euclid coadd fits file from which the catalog was derived
+RA_NAME = "ALPHA_J2000"
+DEC_NAME = "DELTA_J2000"
+MAG_NAME = "MAG_AUTO"
+ZP = 30.132
+FLAT_RADIUS_MAX = 2     # reject all sources with a px radius greater than this value outright
+FLAT_RADIUS_MIN = 0       # reject all sources with a px radius smaller than this value outright
+MIN_STAR_MAG = 19         # only consider sources with uncalibrated mag between MIN_STAR_MAG and MAX_STAR_MAG for star_band 
+MAX_STAR_MAG = 24       
+FLUX_RADIUS_SIGMA = 3       # width of star-band will be 3 * std(flux radius of sources between min and max mag) 
+DEDUPLICATION_KEY = "ang_sep"		# field by which to sort Euclid sources before doing leave-first deduplication of Subaru sources sharing the same Gaia star
+DEDUPLICATION_REVERSE = false		# whether the euclid_deduplication_key sort should be reversed before deduplication
+KEYWORDS = []       # keywords to carry over from this catalog to a joint catalog. will appear as [catalog name]_keyword
+
+[Gaia]
+RA_NAME = "ra"
+DEC_NAME = "dec"
+MAG_NAME = "phot_g_mean_mag"
+ZP = 0                              # unimportant here
+DEDUPLICATION_KEY = "ang_sep"		# field by which to sort Euclid sources before doing leave-first deduplication of Subaru sources sharing the same Gaia star
+DEDUPLICATION_REVERSE = false		# whether the euclid_deduplication_key sort should be reversed before deduplication
+KEYWORDS = []       # keywords to carry over from this catalog to a joint catalog. will appear as [catalog name]_keyword

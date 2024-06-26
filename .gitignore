@@ -1,6 +1,10 @@
 calib_config.txt
 utc_dates.csv
 cb_phot_pipeline.ipynb
+iss.ipynb
+*htm
+uncertainty.ipynb
+random
 
 test/*
 
