@@ -88,7 +88,7 @@ class PipelineDB:
     
     def record_pipeline_end(self,pipeline_run_id,end_dt):
         end_str = utils.tts(utils.dt_to_utc(end_dt))
-        update_stmt = "UPDATE PipelineRuns AS p SET P.EndTimeUTC = ? FROM PipelineRuns AS Pipeline WHERE Pipeline.ID = ?"
+        update_stmt = "UPDATE PipelineRuns AS p SET p.EndTimeUTC = ? FROM PipelineRuns AS Pipeline WHERE Pipeline.ID = ?"
         self.execute(update_stmt,(end_str,pipeline_run_id))
     
     def close(self):
