@@ -2,6 +2,8 @@ import sys, os
 from abc import ABC, abstractmethod
 import sqlite3
 import logging
+import logging.config
+
 try:
     from . import pipeline_utils, utils
 except:
