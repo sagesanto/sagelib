@@ -76,10 +76,10 @@ class PipelineDB:
         start_str = utils.tts(utils.dt_to_utc(start_dt))
         pipeline_id = self.get_next_pipeline_id()
         if log_filepath:
-            insert_stmt = "INSERT INTO TaskRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,LogFilepath,ID) VALUES (?,?,?,?,?,?,?)"
+            insert_stmt = "INSERT INTO PipelineRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,LogFilepath,ID) VALUES (?,?,?,?,?,?,?)"
             self.execute(insert_stmt,(pipeline_name,pipeline_version,start_dt,config_str,input_fits_str,log_filepath, pipeline_id))
             return pipeline_id
-        insert_stmt = "INSERT INTO TaskRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,ID) VALUES (?,?,?,?,?,?)"
+        insert_stmt = "INSERT INTO PipelineRuns (PipelineName,PipelineVersion,StartTimeUTC,Config,InputFITS,ID) VALUES (?,?,?,?,?,?)"
         self.execute(insert_stmt,(pipeline_name,pipeline_version,start_dt,config_str,input_fits_str, pipeline_id))
         return pipeline_id
     
