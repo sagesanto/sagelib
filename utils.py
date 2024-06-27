@@ -36,6 +36,7 @@ class Config:
     def _get_default(self, key):
         if not self.has_defaults:
             raise AttributeError("No default configuration set!")
+        return self._defaults[key]
 
     def get_default(self,key,default=None):
         try: 
