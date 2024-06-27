@@ -33,11 +33,22 @@ class Config:
     def has_defaults(self):
         return self._defaults is not None
     
-    def get_default(self, key):
+    def _get_default(self, key):
         if not self.has_defaults:
             raise AttributeError("No default configuration set!")
-        return self._defaults[key]
+
+    def get_default(self,key,default=None):
+        try: 
+            self._get_default(key)
+        except KeyError:
+            return default
     
+    def get(self,key,default=None):
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            return default
+
     def set(self,key,value):
         self._cfg[key] = value
 
@@ -48,14 +59,13 @@ class Config:
         if self.selected_profile:
             try:
                 return self.selected_profile[index]
-            except Exception as e:
+            except Exception:
                 pass
         try:
             return self._cfg[index]    
-        except Exception as e:
-            pass
+        except Exception:
             if self.has_defaults:
-                return self.get_default(index)
+                return self._get_default(index)
     
     def __str__(self):
         self_str = ""
