@@ -221,10 +221,11 @@ class Pipeline:
                     break
                 self.succeeded.append(task.name)
             except Exception as e:
-                self.logger.exception(f"Uh oh. Got exception running task {task.name}")
-                print(repr(e))
+                self.logger.exception(f"Uh oh. Got exception while running task {task.name}")
                 self.failed.append(task.name)
                 self.crashed.append(task.name)
+                print(repr(e))
+                print(e)
             end_dt = utils.current_dt_utc()
             if codes != 0:
                 self.logger.warning(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code(s) {codes}")
