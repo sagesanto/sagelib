@@ -4,6 +4,7 @@ import numpy as np
 import logging
 from pathlib import Path
 import logging.config
+from multiprocessing_logging import install_mp_handler
 
 BAD_SEX_FLAGS = np.array([8,16,32,64,128])
 
@@ -36,6 +37,7 @@ def configure_logger(name, outfile_path):
         file_handler = logging.FileHandler(outfile_path, mode="a+")
         logger.addHandler(file_handler)
 
+    install_mp_handler()
     return logger
 
 def check_sextractor_flags(flag, bad_flags = BAD_SEX_FLAGS):

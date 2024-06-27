@@ -119,7 +119,8 @@ class Task(ABC):
 
     @abstractmethod
     def __call__(self, fitslist, outdir, config, logfile, pipeline_run_id) -> int:
-        self.logger = pipeline_utils.configure_logger(self.name, logfile)
+        self.logfile = logfile
+        self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
         self.fitslist, self.outdir, self.config, self.pipeline_run_id = fitslist, outdir, config, pipeline_run_id
 
     def outpath(self, file): return os.path.join(self.outdir, file)
@@ -211,7 +212,7 @@ class Pipeline:
         self.logger.info(f"Beginning run {self.pipeline_id} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
             start_dt = utils.current_dt_utc()
-            self.logger.info(f"Began task '{task.name}' ({i+1}/{len(self.tasks)}) at {utils.tts(start_dt)} UTC")
+            self.logger.info(f"Began task '{task.name}' ({i+1}/{len(self.tasks)})")
             codes = -1
             try:
                 codes = task(self.fitslist, self.outdir, self.config, self.logfile, self.pipeline_id)
@@ -226,18 +227,18 @@ class Pipeline:
                 self.crashed.append(task.name)
             end_dt = utils.current_dt_utc()
             if codes != 0:
-                self.logger.error(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(end_dt)} UTC (duration: {end_dt-start_dt}) with code(s) {codes}")
+                self.logger.warning(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code(s) {codes}")
             else:
-                self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) at {utils.tts(end_dt)} UTC (duration: {end_dt-start_dt}) with code(s) {codes}")
+                self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code(s) {codes}")
             self.db.record_task(task.name,start_dt,end_dt,codes,self.pipeline_id)
         self.success = len(self.failed)==0
         if self.success:
-            self.logger.info(f"Successfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version}) at {utils.tts(utils.current_dt_utc())}")
+            self.logger.info(f"Successfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version})")
         else:
-            self.logger.error(f"Unsuccessfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version}) at {utils.tts(utils.current_dt_utc())}")
-            self.logger.error(f"Failed: {', '.join(self.failed)}")
+            self.logger.error(f"Unsuccessfully finished pipeline run {self.pipeline_id} (pipeline {self.name} v{self.version})")
+            self.logger.warning(f"Failed: {', '.join(self.failed)}")
             if self.crashed:
-                self.logger.error(f"Crashed: {', '.join(self.crashed)}")
+                self.logger.warning(f"Crashed: {', '.join(self.crashed)}")
             else:
                 self.logger.info("No crashes.")
         self.logger.info(f"Succeeded: {self.succeeded}")
