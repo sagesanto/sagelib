@@ -177,9 +177,7 @@ class Pipeline:
             for key in keys:
                 try:
                     self.config[key]
-                except Exception:
-                    # this means we didn't find the key in the config. 
-                    # this is ok if the key will instead be set by a task that runs before this one
+                except Exception: # this means we didn't find the key in the config. this is ok if the key will instead be set by a task that runs before this one
                     if key not in set_by_tasks:
                         if missing.get(task.name):
                             missing[task.name].append(key)
@@ -223,6 +221,7 @@ class Pipeline:
                 self.succeeded.append(task.name)
             except Exception as e:
                 self.logger.exception(f"Uh oh. Got exception running task {task.name}")
+                print(repr(e))
                 self.failed.append(task.name)
                 self.crashed.append(task.name)
             end_dt = utils.current_dt_utc()
