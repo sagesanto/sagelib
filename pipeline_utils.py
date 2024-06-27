@@ -1,16 +1,18 @@
 import sys, os
+MODULE_PATH = os.path.abspath(os.path.dirname(__file__))
+def mod(path): return os.path.join(MODULE_PATH,path)
 import json
 import numpy as np
 import logging
 from pathlib import Path
 import logging.config
-from multiprocessing_logging import install_mp_handler
+
+try:
+    from .multiprocess_logging import install_mp_handler
+except:
+    from multiprocess_logging import install_mp_handler
 
 BAD_SEX_FLAGS = np.array([8,16,32,64,128])
-
-MODULE_PATH = os.path.abspath(os.path.dirname(__file__))
-def mod(path): return os.path.join(MODULE_PATH,path)
-
 
 def ldac_to_table(fits_file,frame=1):
     import astromatic_wrapper as aw
