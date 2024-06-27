@@ -148,7 +148,7 @@ class Pipeline:
     def __init__(self, pipeline_name, tasks, fitslist, outdir, profile_name, config_path, version, default_cfg_path=None):
         self.name = pipeline_name
         self.tasks = tasks
-        self.fitslist = fitslist
+        self.fitslist = [os.path.abspath(f) for f in fitslist]
         self.outdir = outdir
         os.makedirs(outdir,exist_ok=True)
         self.profile_name = profile_name
