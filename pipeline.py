@@ -152,11 +152,12 @@ class Pipeline:
         self.outdir = outdir
         os.makedirs(outdir,exist_ok=True)
         self.profile_name = profile_name
-        self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH") # this is the global config in the file
+        self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH")
         self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = os.path.abspath(os.path.join(outdir,f"{self.name}.log"))
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
         self.dbpath = self.config("DB_PATH")
+        print(self.dbpath)
         self.db = PipelineDB(self.dbpath, self.logger)
         self.version = version
         self.failed = []
