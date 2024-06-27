@@ -30,8 +30,11 @@ def configure_logger(name, outfile_path):
             # NOTE RELIES ON FILE HANDLER BEING THE SECOND HANDLER
             root_logger = logging.getLogger()
             file_handler = root_logger.handlers[1]
-            # file_handler = root_logger.handlers[1]
             file_handler.setStream(Path(outfile_path).open('a'))
+            try:
+                os.remove("should_be_set_by_code.log")  # pardon this
+            except:
+                pass
 
     except Exception as e:
         print(f"Can't load logging config ({e}). Using default config.")
