@@ -120,7 +120,7 @@ class Task(ABC):
     @abstractmethod
     def __call__(self, fitslist, outdir, config, logfile, pipeline_run_id) -> int:
         self.logger = pipeline_utils.configure_logger(self.name, logfile)
-        self.outdir, self.config, self.pipeline_run_id = outdir, config, pipeline_run_id
+        self.fitslist, self.outdir, self.config, self.pipeline_run_id = fitslist, outdir, config, pipeline_run_id
 
     def outpath(self, file): return os.path.join(self.outdir, file)
 
