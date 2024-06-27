@@ -1,7 +1,6 @@
 import os
 import tomli
 from datetime import datetime, timedelta
-# from datetime import UTC as dtUTC
 import pytz
 from pytz import UTC
 
@@ -101,31 +100,33 @@ def read_config(config_path):
     return cfg
 
 def multi_replace(string:str, old_strs, subst_str):
+    # WARNING: this is clumsy and can get behave unexpectedly if subst_str and one of old_strs are too similar 
     for s in old_strs:
         string = string.replace(s, subst_str)
     return string
 
 STRFTIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-def string_to_time(dt:datetime, fname=False):
-    """ Use standard module format to convert string to time """
-    timestr = dt.strptime(STRFTIME_FORMAT)
+def time_to_string(dt:datetime, fname=False):
+    """ Use standard sagelib module format to convert string to time """
+    timestr = dt.strftime(STRFTIME_FORMAT)
     if fname:
         timestr = multi_replace(timestr,("-",":"," "),"_")
     return timestr
 
-def stt(dt:datetime, fname=False):
-    """alias for string_to_time"""
-    return string_to_time(dt=dt, fname=fname)
+def tts(dt:datetime, fname=False):
+    """alias for time_to_string"""
+    return time_to_string(dt=dt, fname=fname)
 
-def time_to_string(timestr:str, from_fname=False):
-    """ Use standard module format to convert time to string"""
+def stt(timestr:str, from_fname=False):
+    """alias for string_to_time"""
+    return string_to_time(timestr=timestr, from_fname=from_fname)
+
+def string_to_time(timestr:str, from_fname=False):
+    """ Use standard sagelib module format to convert time to string"""
     fmt = STRFTIME_FORMAT
     if from_fname:
         fmt = multi_replace(fmt,("-",":"," "),"_")
-    return datetime.strftime(timestr, fmt)
+    return datetime.strptime(timestr, fmt)
 
-def tts(timestr:str, from_fname=False):
-    """alias for time_to_string"""
-    return time_to_string(timestr=timestr, from_fname=from_fname)
 
