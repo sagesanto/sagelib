@@ -42,7 +42,7 @@ def configure_logger(name, outfile_path):
         file_handler = logging.FileHandler(outfile_path, mode="a+")
         logger.addHandler(file_handler)
 
-    install_mp_handler()
+    # install_mp_handler()
     return logger
 
 def check_sextractor_flags(flag, bad_flags = BAD_SEX_FLAGS):

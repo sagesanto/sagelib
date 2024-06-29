@@ -6,7 +6,7 @@ from pytz import UTC
 
 class Config:
     def __init__(self,filepath,default_env_key="CONFIG_DEFAULTS"):
-        self._cfg = read_config(filepath)
+        self._cfg = _read_config(filepath)
         self.selected_profile = None
         self._defaults = None
         self._filepath = filepath 
@@ -14,7 +14,7 @@ class Config:
         self._default_path = os.getenv(default_env_key)
         if self._default_path:
             try:
-                self._defaults = read_config(self._default_path)
+                self._defaults = _read_config(self._default_path)
             except Exception as e:
                 print(f"ERROR: config tried to load defaults file {self._default_path} but encountered the following: {e}")
                 print(f"Preceding without defaults")
@@ -25,7 +25,7 @@ class Config:
         return self
     
     def load_defaults(self, filepath):
-        self._defaults = read_config(filepath)
+        self._defaults = _read_config(filepath)
         self._default_path = filepath
 
     @property
@@ -78,7 +78,7 @@ class Config:
         return self_str
 
     def __repr__(self) -> str:
-        return f"Config from {self._filepath} with {'profile ' + self.selected_profile_name if self.selected_profile_name else 'no profile'} selected and {f'defaults loaded from {self._default_path}' if self.has_defaults else ' no defaults loaded'}" 
+        return f"Config from {self._filepath} with {f'profile \"{self.selected_profile_name}\"' if self.selected_profile_name else 'no profile'} selected and {f'defaults loaded from {self._default_path}' if self.has_defaults else ' no defaults loaded'}" 
 
 
 def current_dt_utc():
@@ -94,7 +94,7 @@ def dt_to_tz(dt, tz, require_existing_timezone=False):
 def dt_to_utc(dt, require_existing_timezone=False):
     return dt_to_tz(dt, UTC, require_existing_timezone)
 
-def read_config(config_path):
+def _read_config(config_path):
     with open(config_path, "rb") as f:
         cfg = tomli.load(f)
     return cfg

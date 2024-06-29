@@ -5,17 +5,18 @@ import numpy as np
 
 from .pipeline_utils import check_sextractor_flags, ldac_to_table
 
-def df_to_ds9(df,outname,xname,yname,physical=False,region_radius=5):
+# REGION RADIUS SHOULD BE A STRING WITH " in it (ARCSEC) IF PHYSICAL IS FALSE
+def df_to_ds9(df,outname,xname,yname,physical=False,region_radius=5,color="green"):
     with open(outname,"w") as f:
-        f.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+        f.write(f'global color={color} dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
         f.write('physical\n' if physical else 'WCS\n')
         for i, row in df.iterrows():
             f.write(f"circle({row[xname]},{row[yname]},{region_radius}) # width=2\n")
     print(f"Wrote {len(df.index)} regions to {outname}.")
 
-def table_to_ds9(table, outname, xname, yname, physical=False, region_radius=5):
+def table_to_ds9(table, outname, xname, yname, physical=False, region_radius=5,color="green"):
     df = table.to_pandas()
-    df_to_ds9(df, outname, xname, yname, physical, region_radius)
+    df_to_ds9(df, outname, xname, yname, physical, region_radius,color=color)
 
 def ldac_to_ds9(fits_file, outname, physical=False,bad_sextractor_flags=None,region_radius=5):
     table = ldac_to_table(fits_file)

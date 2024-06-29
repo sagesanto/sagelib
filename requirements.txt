@@ -51,4 +51,4 @@ zarr==2.16.1
 zipp==3.17.0
 tomli
 colorlog
-
+python-dotenv
