@@ -65,6 +65,21 @@ class PipelineRun(pipeline_base):
 
     def __repr__(self):
         return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
+    
+    def get_related_products(self, dbsession, **filters):
+        """query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products"""
+        query = dbsession.query(Product).filter(
+            (Product.producing_pipeline_run_id == self.ID) | 
+            (Product.UsedByRunsAsInput.any(PipelineRun.ID == self.ID))
+        )
+        if filters:
+            for colname, cond_val in filters.items():
+                col = getattr(Product,colname)
+                if col is None:
+                    raise AttributeError(f"Product table has no column {colname}")
+                query = query.filter(col.like(cond_val))
+        related_products = query.all()
+        return related_products
 
 class Product(pipeline_base):
     __tablename__ = 'Product'

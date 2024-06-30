@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 import logging
 import logging.config
 from typing import List
-from sqlalchemy import and_
 
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(MODULE_PATH)
@@ -142,6 +141,11 @@ class Task(ABC):
         self.db.record_product(product)
         return product
 
+    def find_products(self, data_type, **filters) -> List[Product]:
+        """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator."""
+        # if all_runs:
+                # q = self.db.query(Product).filter((Product.data_type==data_type) & (Product.data_subtype.like(data_subtype))).all()
+        return self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **filters)
 
     @property
     @abstractmethod
@@ -151,18 +155,30 @@ class Task(ABC):
 
     @property
     @abstractmethod
-    def description(self):
-        pass
-
-    @property
-    @abstractmethod
     def will_set(self):
         """Return a list of keys in the config that this task will set while running"""
         pass
 
+    @property
+    @abstractmethod
+    def required_product_types(self):
+        """Return a list of datatypes that must be passed as input or produced by a prior pipeline task for this one to work. Datatypes can be denoted as 'datatype' or 'datatype.subtype' """
+        return []
+    
+    @property 
+    @abstractmethod
+    def product_types_produced(self):
+        """Return a list of datatypes that this pipeline step will produce. Datatypes can be denoted as 'datatype' or 'datatype.subtype' """
+        return []
+
+    @property
+    @abstractmethod
+    def description(self):
+        pass
+
 
 class Pipeline:
-    def __init__(self, pipeline_name, tasks:List[Task], inputs:List[str], outdir, profile_name, config_path, version, default_cfg_path=None):
+    def __init__(self, pipeline_name, tasks:List[Task], inputs:List[Product], outdir, profile_name, config_path, version, default_cfg_path=None):
         self.name = pipeline_name
         # list of *constructed* task objects, not just classes
         self.tasks = tasks
@@ -214,16 +230,57 @@ class Pipeline:
                     set_by_tasks.append(will_be_set)
                 else:
                     set_by_tasks.extend(will_be_set)
-
         if missing:
             raise AttributeError(f"Tasks are missing config keys: {missing}")
+        
+        # check products produced in pipeline
+        missing = {}
+        datatypes_supplied = []
+        for p in self.inputs:
+            datatypes_supplied.append("*")
+            datatypes_supplied.append(p.data_type)
+            datatypes_supplied.append(f"{p.data_type}.{p.data_subtype}")
+        datatypes_supplied = list(set(datatypes_supplied))
+        for task in self.tasks:
+            for dtype in task.required_product_types:
+                if dtype not in datatypes_supplied:
+                    if missing.get(task.name):
+                        missing[task.name].append(dtype)
+                    else:
+                        missing[task.name] = [dtype]
+            datatypes_supplied.extend(task.product_types_produced)
+            datatypes_supplied = list(set(datatypes_supplied))
+        if missing:
+            raise AttributeError(f"Tasks are missing the following data products: {missing}")
+
+    def check_task_honesty(self,task:Task,taskrun:TaskRun):
+        missing_keys = []
+        for key in task.will_set:
+            if self.config.get(key) is None:
+                missing_keys.append(key)
+        produced_by_task = self.pipeline_run.get_related_products(self.db.session,producing_task_run_id=taskrun.ID)
+        types_produced_by_task = []
+        for p in produced_by_task:
+            types_produced_by_task.append("*")
+            types_produced_by_task.append(p.data_type)
+            types_produced_by_task.append(f"{p.data_type}.{p.data_subtype}")
+        types_produced_by_task = set(types_produced_by_task)
+        missing_product_types = []
+        for t in task.product_types_produced:
+            if t not in types_produced_by_task:
+                missing_product_types.append(t)
+        
+        if missing_keys:
+            self.logger.warning(f"It looks like task '{task.name}' (#{taskrun.ID}) failed to set the following config keys despite promising to do so: {missing_keys}. This is probably a programming error. The pipeline run will continue, but this could cause serious problems.")
+        if missing_product_types:
+            self.logger.warning(f"It looks like task '{task.name}' (#{taskrun.ID}) failed to produce data products of the following types, despite promising to do so: {missing_product_types}. This is probably a programming error. The pipeline run will continue, but this could cause serious problems.")
+        
 
     def get_required_keys(self):
         keywords = {}
         for task in self.tasks:
             keywords[task] = task.required_params
         return keywords
-
     
     def run(self):
         self.succeeded = []
@@ -261,6 +318,7 @@ class Pipeline:
                     self.failed.append(task.name)
                     self.failed_task_runs.append(task_run)
                     break
+                self.check_task_honesty(task,task_run)
                 self.succeeded_task_runs.append(task_run)
                 self.succeeded.append(task.name)
             except Exception as e:
@@ -308,11 +366,19 @@ if __name__ == "__main__":
             outproduct = self.make_and_record_product("test_one","nowhere,yet",precursors=self.inputs)
             # raise RuntimeError("I'm going to crash now!")
             return 0
-        
+
         @property
         def required_params(self):
             return ["TEST_GLOBAL","TEST_TEST", "TEST_DEFAULT"]
         
+        @property
+        def required_product_types(self):
+            return ["test_input"]
+        
+        @property
+        def product_types_produced(self):
+            return ["test_one"]
+
         @property
         def will_set(self):
             return ["TEST_SET_ONE"]
@@ -331,8 +397,11 @@ if __name__ == "__main__":
             precursors = [task_one_out]
             precursors.extend(inputs)
             task_two_out = self.make_and_record_product("test_two","nowhere, yet",precursors=precursors)
+            self.logger.info(f"Input: \n{str(inputs[0])}")
             self.logger.info(f"Task one's product: \n{str(task_one_out)}")
             self.logger.info(f"Task two's product: \n{str(task_two_out)}")
+            self.logger.info(f"All products from this run: {self.find_products("%")}")
+
             return 0
         
         @property
@@ -340,8 +409,16 @@ if __name__ == "__main__":
             return ["TEST_SET_ONE"]
 
         @property
+        def required_product_types(self):
+            return ["test_one"]
+        
+        @property
+        def product_types_produced(self):
+            return ["test_two","i'm lying about producing this type"]
+
+        @property
         def will_set(self):
-            return None
+            return ["i'm lying about setting this key"]
 
         @property
         def description(self):

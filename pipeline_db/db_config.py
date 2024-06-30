@@ -4,7 +4,6 @@ import sys,os
 import json
 import logging
 from os.path import abspath, join, dirname, pardir, exists
-
 from sqlalchemy import create_engine
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -18,11 +17,14 @@ sys.path.append(dirname(__file__))
 # import utils
 # from utils import Config
 from pipeline_utils import configure_logger
+import logging
 
 sys.path.remove(grandparent_dir)
 sys.path.remove(dirname(__file__))
 
 DB_PATH = None
+
+_logger = logging.getLogger(__name__)
 
 # dotenv_path = join(dirname(__file__),".env")
 # if exists(dotenv_path):
@@ -38,14 +40,14 @@ DB_PATH = None
 # @event.listens_for(Engine, "before_cursor_execute")
 # def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
 #     conn.info.setdefault("query_start_time", []).append(time.time())
-#     logger.debug("Start Query: %s", statement)
-#
-#
+#     print("Start Query: %s", statement)
+
+
 # @event.listens_for(Engine, "after_cursor_execute")
 # def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
 #     total = time.time() - conn.info["query_start_time"].pop(-1)
-#     logger.debug("Query Complete!")
-#     logger.debug("Total Time: %f", total)
+#     print("Query Complete!")
+#     print("Total Time: %f", total)
 
 
 # @event.listens_for(Engine, 'close')
