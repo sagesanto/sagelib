@@ -30,7 +30,6 @@ def mod(path): return join(MODULE_PATH,path)
 #         self.creation_dt = dt_to_utc(creation_dt)
 #         self.product_location, self.ID, self.flags, self.is_input, self.data_subtype = product_location, ID, flags, is_input, data_subtype
 
-
 class PipelineDB:
     def __init__(self, dbpath, logger):
         self.logger = logger
@@ -42,6 +41,12 @@ class PipelineDB:
 
     def connect(self):
         self.session, _ = configure_db(self.dbpath)
+
+    def query(self,*args,**kwargs):
+        return self.session.query(*args,**kwargs)
+    
+    def add(self,*args,**kwargs):
+        self.session.add(*args,**kwargs)
 
     def find_product(self, condition):
         return self.session.query(Product).filter(condition).all()
@@ -124,7 +129,19 @@ class Task(ABC):
         self.inputs, self.outdir, self.config = inputs, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
 
+    @property
+    def ID(self):
+        return self.task_run.ID
+
     def outpath(self, file): return join(self.outdir, file)
+
+    def make_and_record_product(self, data_type, product_location, flags=None, data_subtype=None,**kwargs):
+        """Make a Product object with this task's ID, pipeline run ID, etc, add it to the database, and return it"""
+        product = Product(data_type, self.name, now_stamp(), product_location, is_input=0, 
+                          producing_pipeline_run_id=self.pipeline_run.ID, producing_task_run_id=self.task_run.ID, flags=flags, data_subtype=data_subtype, **kwargs)
+        self.db.record_product(product)
+        return product
+
 
     @property
     @abstractmethod
@@ -256,9 +273,9 @@ class Pipeline:
                 print(e)
                 break
             if code != 0:
-                self.logger.warning(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code(s) {code}")
+                self.logger.warning(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code {code}")
             else:
-                self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code(s) {code}")
+                self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code {code}")
         self.success = len(self.failed)==0 and len(self.crashed)==0
         if self.success:
             self.logger.info(f"Successfully finished pipeline run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
@@ -288,9 +305,7 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_TEST")) 
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
-            outproduct = Product("test","TestTaskOne",now_stamp(),"nowhere,yet",0,self.pipeline_run.ID,self.task_run.ID,None,None)
-            outproduct.precursors = self.inputs
-            self.db.record_product(outproduct)
+            outproduct = self.make_and_record_product("test","nowhere,yet",precursors=self.inputs)
             # raise RuntimeError("I'm going to crash now!")
             return 0
         
@@ -311,6 +326,11 @@ if __name__ == "__main__":
         def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun):
             super().__call__(inputs, outdir, config, logfile, pipeline_run, db, task_run)
             self.logger.info(self.config("TEST_SET_ONE"))
+            task_one_out = self.db.query(Product).filter((Product.task_name=="test task one") & (Product.ProducingPipeline==self.pipeline_run)).first()
+            # test making a Product whose precursors are the inputs + the task one output
+            precursors = [task_one_out]
+            precursors.extend(inputs)
+            task_two_out = self.make_and_record_product("test","nowhere, yet",precursors=precursors)
             return 0
         
         @property
@@ -331,5 +351,5 @@ if __name__ == "__main__":
 
     test_input = Product("test","INPUT", now_stamp(),"nowhere, yet",is_input=1)
 
-    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input],"./test/pipeline","Test","./test/pipeline/test_config.toml",0, default_cfg_path="./test/pipeline/defaults.toml")
+    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
     success = pipeline.run()
