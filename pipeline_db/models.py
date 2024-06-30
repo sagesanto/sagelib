@@ -61,6 +61,10 @@ class PipelineRun(pipeline_base):
     LogFilepath = Column(String, nullable=True)
     OutputProducts: Mapped[List["Product"]] = relationship("Product")
     Inputs: Mapped[List["Product"]] = relationship("Product", secondary='PipelineInputAssociation', back_populates="UsedByRunsAsInput")
+    TaskRuns: Mapped[List["TaskRun"]] = relationship("TaskRun")
+
+    def __repr__(self):
+        return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
 
 class Product(pipeline_base):
     __tablename__ = 'Product'
@@ -79,7 +83,8 @@ class Product(pipeline_base):
                               secondary='PrecursorProductAssociation',
                               primaryjoin='Product.ID == PrecursorProductAssociation.ProductID',
                               secondaryjoin='Product.ID == PrecursorProductAssociation.PrecursorID',
-                              backref='derivatives')
+                              backref='derivatives',
+                              overlaps="product")
     ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
@@ -90,6 +95,12 @@ class Product(pipeline_base):
                          task_name=task_name, producing_task_run_id=producing_task_run_id,
                          creation_dt=creation_dt, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
+
+    def __str__(self):
+        return f"{'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' created at {self.creation_dt} UTC with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives.\nProducers: Pipeline {self.ProducingPipeline}, Task {self.ProducingTask}.\nPrecursors:\n\t{'\n\t'.join([repr(p) for p in self.precursors])}\nDerivatives:\n\t{'\n\t'.join([repr(d) for d in self.derivatives])}"
+    
+    def __repr__(self):
+        return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}'"
 
 
 class TaskRun(pipeline_base):
@@ -102,3 +113,7 @@ class TaskRun(pipeline_base):
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'))
     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     Outputs: Mapped[List["Product"]] = relationship("Product", back_populates="ProducingTask")
+    Pipeline = relationship("PipelineRun",back_populates="TaskRuns")
+
+    def __repr__(self):
+        return f"'{self.TaskName}' (run #{self.ID})"

@@ -305,7 +305,7 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_TEST")) 
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
-            outproduct = self.make_and_record_product("test","nowhere,yet",precursors=self.inputs)
+            outproduct = self.make_and_record_product("test_one","nowhere,yet",precursors=self.inputs)
             # raise RuntimeError("I'm going to crash now!")
             return 0
         
@@ -330,7 +330,9 @@ if __name__ == "__main__":
             # test making a Product whose precursors are the inputs + the task one output
             precursors = [task_one_out]
             precursors.extend(inputs)
-            task_two_out = self.make_and_record_product("test","nowhere, yet",precursors=precursors)
+            task_two_out = self.make_and_record_product("test_two","nowhere, yet",precursors=precursors)
+            self.logger.info(f"Task one's product: \n{str(task_one_out)}")
+            self.logger.info(f"Task two's product: \n{str(task_two_out)}")
             return 0
         
         @property
@@ -349,7 +351,7 @@ if __name__ == "__main__":
     test_task_one = TestTaskOne("test task one")
     test_task_two = TestTaskTwo("test task two")
 
-    test_input = Product("test","INPUT", now_stamp(),"nowhere, yet",is_input=1)
+    test_input = Product("test_input","INPUT", now_stamp(),"nowhere, yet",is_input=1)
 
     pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
     success = pipeline.run()
