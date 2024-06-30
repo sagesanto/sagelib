@@ -98,9 +98,10 @@ class PipelineDB:
         existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
         if existing_product:
             product = existing_product
-            self.logger.info(f"Found product {existing_product.ID}")
+            self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
         else:
             # if this product doesn't already exist in the db, it should be because its new and therefore does not yet have a producing_product_id
+
             assert product.producing_pipeline_run_id is None
             product.producing_pipeline_run_id = pipeline_run.ID
             product.creation_dt = now_stamp()
@@ -432,7 +433,8 @@ if __name__ == "__main__":
     test_task_one = TestTaskOne("test task one")
     test_task_two = TestTaskTwo("test task two")
 
-    test_input = Product("test_input","INPUT", now_stamp(),"nowhere, yet",is_input=1)
+    test_input = Product("test_input","INPUT", now_stamp(),"nowhere yet",is_input=1)
+    test_input_2 = Product("test_input","INPUT", now_stamp(),"nowhere yet 2",is_input=1)
 
-    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
+    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
     success = pipeline.run()
