@@ -114,7 +114,7 @@ class Product(pipeline_base):
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
 
     def __str__(self):
-        return f"{'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' created at {self.creation_dt} UTC with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives.\nProducers: Pipeline {self.ProducingPipeline}, Task {self.ProducingTask}.\nPrecursors:\n\t{'\n\t'.join([repr(p) for p in self.precursors])}\nDerivatives:\n\t{'\n\t'.join([repr(d) for d in self.derivatives])}"
+        return f"{'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' created at {self.creation_dt} UTC with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives.\nProducers: Pipeline {self.ProducingPipeline}, Task {self.ProducingTask}.\nPrecursors:\n\t{'\n\t'.join([repr(p) for p in self.precursors])}\nDerivatives:\n\t{'\n\t'.join([repr(d) for d in self.derivatives])}+\n"
     
     def __repr__(self):
         return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}'"

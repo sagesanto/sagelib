@@ -91,14 +91,10 @@ class PipelineDB:
 
     def record_input_data(self,product:Product,pipeline_run:PipelineRun):
         # create records to indicate what the inputs to a pipeline are, returns product
-        print(product)
-        print(pipeline_run)
-        print(product.ID)
-        print("")
         existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
         if existing_product:
             product = existing_product
-            self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
+            # self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
         else:
             # if this product doesn't already exist in the db, it should be because its new and therefore does not yet have a producing_product_id
 
@@ -106,7 +102,7 @@ class PipelineDB:
             product.producing_pipeline_run_id = pipeline_run.ID
             product.creation_dt = now_stamp()
             self.session.add(product)
-            self.logger.info(f"Made product {product.ID}")
+            # self.logger.info(f"Made product {product}")
 
         pipeline_run.Inputs.append(product)
         self.session.commit()
