@@ -91,6 +91,10 @@ class PipelineDB:
 
     def record_input_data(self,product:Product,pipeline_run:PipelineRun):
         # create records to indicate what the inputs to a pipeline are, returns product
+        print(product)
+        print(pipeline_run)
+        print(product.id)
+        print("")
         existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
         if existing_product:
             product = existing_product
