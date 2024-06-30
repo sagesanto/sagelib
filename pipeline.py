@@ -137,6 +137,7 @@ class Task(ABC):
 
     def make_and_record_product(self, data_type, product_location, flags=None, data_subtype=None,**kwargs):
         """Make a Product object with this task's ID, pipeline run ID, etc, add it to the database, and return it"""
+        product_location = abspath(product_location)
         product = Product(data_type, self.name, now_stamp(), product_location, is_input=0, 
                           producing_pipeline_run_id=self.pipeline_run.ID, producing_task_run_id=self.task_run.ID, flags=flags, data_subtype=data_subtype, **kwargs)
         self.db.record_product(product)
