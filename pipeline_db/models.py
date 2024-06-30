@@ -13,7 +13,6 @@ from sqlalchemy import create_engine, Column, Integer, String, Numeric, Text, Fo
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
-
 sys.path.append(dirname(__file__))
 
 parent_dir = abspath(join(dirname(__file__), pardir))
@@ -24,15 +23,18 @@ from pipeline_db.db_config import pipeline_base
 sys.path.remove(parent_dir)
 sys.path.remove(dirname(__file__))
 
-# table to match observations with obs codes
-PipelineInputAssociation = Table(
-    'PipelineInputAssociation',
-    pipeline_base.metadata,
-    Column('PipelineRunID', Integer, ForeignKey('PipelineRun.ID'), nullable=False,primary_key=True, index=True),
-    Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
-    # UniqueConstraint('PipelineRunID','ProductID',name="UniqueProducts")
-    extend_existing=True
-)
+PipelineInputAssociation = None
+
+if not PipelineInputAssociation:
+    # table to match observations with obs codes
+    PipelineInputAssociation = Table(
+        'PipelineInputAssociation',
+        pipeline_base.metadata,
+        Column('PipelineRunID', Integer, ForeignKey('PipelineRun.ID'), nullable=False,primary_key=True, index=True),
+        Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
+        # UniqueConstraint('PipelineRunID','ProductID',name="UniqueProducts")
+        extend_existing=True
+    )
 
 class PrecursorProductAssociation(pipeline_base):
     __tablename__ = 'PrecursorProductAssociation'

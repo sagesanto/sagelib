@@ -6,14 +6,14 @@ import logging.config
 from typing import List
 
 MODULE_PATH = abspath(dirname(__file__))
-sys.path.append(MODULE_PATH)
+sys.path.append(join(MODULE_PATH,os.path.pardir))
 
-import pipeline_utils, utils
-from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
+from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
 
-from pipeline_db.db_config import configure_db
-from pipeline_db.models import PipelineRun, Product, TaskRun
-sys.path.append(MODULE_PATH)
+sys.path.remove(join(MODULE_PATH,os.path.pardir))
+
+# from pipeline_db.models import PipelineRun, Product, TaskRun
 
 def mod(path): return join(MODULE_PATH,path)
 
