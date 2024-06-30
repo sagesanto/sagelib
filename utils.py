@@ -129,4 +129,5 @@ def string_to_time(timestr:str, from_fname=False):
         fmt = multi_replace(fmt,("-",":"," "),"_")
     return datetime.strptime(timestr, fmt)
 
-
+def now_stamp():
+    return tts(current_dt_utc())

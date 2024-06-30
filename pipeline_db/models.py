@@ -34,14 +34,15 @@ PipelineInputAssociation = Table(
     extend_existing=True
 )
 
-PrecursorProductAssociation = Table(
-    'PrecursorProductAssociation',
-    pipeline_base.metadata,
-    Column('PrecursorID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
-    Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
-    # PrimaryKeyConstraint('PrecursorID', 'ProductID'),
-    extend_existing=True
-)
+class PrecursorProductAssociation(pipeline_base):
+    __tablename__ = 'PrecursorProductAssociation'
+
+    PrecursorID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+    ProductID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+
+    # Define the relationship to Product table (not needed for direct querying)
+    precursor = relationship('Product', foreign_keys=[PrecursorID])
+    product = relationship('Product', foreign_keys=[ProductID])
 
 
 class PipelineRun(pipeline_base):
@@ -58,7 +59,7 @@ class PipelineRun(pipeline_base):
     Config = Column(String, nullable=False)
     # InputFITS = Column(String, nullable=False)
     LogFilepath = Column(String, nullable=True)
-    # OutputProduct: Mapped[List["Product"]] = relationship("Product")
+    OutputProducts: Mapped[List["Product"]] = relationship("Product")
     Inputs: Mapped[List["Product"]] = relationship("Product", secondary='PipelineInputAssociation', back_populates="UsedByRunsAsInput")
 
 class Product(pipeline_base):
@@ -74,122 +75,30 @@ class Product(pipeline_base):
     flags = Column(Integer, nullable=True)
     is_input = Column(Integer, nullable=False) 
     data_subtype = Column(String, nullable=True)
-    Precursors: Mapped[List["Product"]] = relationship("Product", secondary='PrecursorProductAssociation', 
-                                                       primaryjoin=ID==PrecursorProductAssociation.c.ProductID,
-                                                       secondaryjoin=ID==PrecursorProductAssociation.c.PrecursorID)
-    # Precursors: Mapped[List["Product"]] = relationship("Product", secondary='PrecursorProductAssociation', back_populates="Derivatives",remote_side=[ID])
-    # Derivatives = relationship("Product")
-    # ProducingPipeline: Mapped[List["PipelineRun"]] = relationship("Product", back_populates="OutputProduct",primaryjoin=pipeline_run_id==PipelineRun.ID)
+    precursors = relationship('Product',
+                              secondary='PrecursorProductAssociation',
+                              primaryjoin='Product.ID == PrecursorProductAssociation.ProductID',
+                              secondaryjoin='Product.ID == PrecursorProductAssociation.PrecursorID',
+                              backref='derivatives')
+    ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
+
+    def __init__(self, data_type, task_name, creation_dt, product_location, is_input, 
+                 producing_pipeline_run_id=None, producing_task_run_id=None, flags=None, data_subtype=None, **kwargs):
+        super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
+                         task_name=task_name, producing_task_run_id=producing_task_run_id,
+                         creation_dt=creation_dt, product_location=product_location,
+                         flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
+
 
 class TaskRun(pipeline_base):
     __tablename__ = 'TaskRun'
 
     TaskName = Column(String, nullable=False)
     StartTimeUTC = Column(String, nullable=False)
-    EndTimeUTC = Column(String, nullable=False)
-    StatusCodes = Column(Integer, nullable=False)
+    EndTimeUTC = Column(String, nullable=True)
+    StatusCodes = Column(Integer, nullable=True)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'))
     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    Outputs: Mapped[List["Product"]] = relationship("TaskRun")
-
-
-# # model for the candidate (target) object
-# class CandidateModel(candidate_base):
-#     __tablename__ = 'Candidates'
-
-#     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-#     Author = Column(String, nullable=False)
-#     DateAdded = Column(String, nullable=False)
-#     DateLastEdited = Column(String)
-#     CandidateName = Column(String, nullable=False)
-#     Priority = Column(Integer, nullable=False)
-#     CandidateType = Column(String, nullable=False)
-#     Updated = Column(String)
-#     StartObservability = Column(String)
-#     EndObservability = Column(String)
-#     TransitTime = Column(String)
-#     RejectedReason = Column(String)
-#     RemovedReason = Column(String)
-#     RemovedDt = Column(String)
-#     RA = Column(Numeric)
-#     Dec = Column(Numeric)
-#     dRA = Column(Numeric)
-#     dDec = Column(Numeric)
-#     Magnitude = Column(Numeric)
-#     RMSE_RA = Column(Numeric)
-#     RMSE_Dec = Column(Numeric)
-#     nObs = Column(Integer)
-#     Score = Column(Integer)
-#     ApproachColor = Column(String)
-#     ExposureTime = Column(Numeric)
-#     NumExposures = Column(Integer)
-#     Scheduled = Column(Integer, default=0)
-#     Observed = Column(Integer, default=0)
-#     Processed = Column(Numeric, default=0)
-#     Submitted = Column(Integer, default=0)
-#     Notes = Column(Text)
-#     CVal1 = Column(Text)
-#     CVal2 = Column(Text)
-#     CVal3 = Column(Text)
-#     CVal4 = Column(Text)
-#     CVal5 = Column(Text)
-#     CVal6 = Column(Text)
-#     CVal7 = Column(Text)
-#     CVal8 = Column(Text)
-#     CVal9 = Column(Text)
-#     CVal10 = Column(Text)
-#     Filter = Column(String)
-#     Observations: Mapped[List["Observation"]] = relationship("Observation", back_populates="candidate")
-
-#     def as_dict(self):
-#         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
-# # model for the observation object
-# class Observation(candidate_base):
-#     __tablename__ = 'Observation'
-
-#     CandidateID = Column(Integer, ForeignKey('Candidates.ID'))
-#     ObservationID = Column(Integer, primary_key=True, nullable=False)
-#     RMSE_RA = Column(Numeric)
-#     RMSE_Dec = Column(Numeric)
-#     RA = Column(Numeric)
-#     Dec = Column(Numeric)
-#     ApproachColor = Column(String)
-#     AstrometryStatus = Column(String)
-#     ExposureTime = Column(Numeric)
-#     EncoderRA = Column(Numeric)
-#     EncoderDec = Column(Numeric)
-#     SkyBackground = Column(Numeric)
-#     Temperature = Column(Numeric)
-#     Dataset = Column(String)
-#     CaptureStartEpoch = Column(Numeric)
-#     Focus = Column(Numeric)
-#     RAOffset = Column(Numeric) # deg
-#     DecOffset = Column(Numeric) # deg
-#     SystemName = Column(String)
-#     CameraName = Column(String)
-#     # ProcessingCodesCol = Column(String)
-#     Submitted = Column(Integer, nullable=False)
-#     Comments = Column(Text)
-
-#     candidate = relationship('CandidateModel', back_populates='Observations')
-#     ProcessingCode: Mapped[List["ProcessingCode"]] = relationship("ProcessingCode", secondary='ObservationCodeAssociation', back_populates="Observations")
-
-#     def as_dict(self):
-#         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
-# # model for the processing code
-# class ProcessingCode(candidate_base):
-#     __tablename__ = 'ProcessingCode'
-
-#     ID = Column(Integer, primary_key=True, autoincrement=True)
-#     Code = Column(Integer, nullable=False, unique=True)
-#     Description = Column(String, nullable=False)
-#     Observations: Mapped[List["Observation"]] = relationship("Observation", secondary='ObservationCodeAssociation', back_populates="ProcessingCode")
-
-#     def as_dict(self):
-#         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-    
-
+    Outputs: Mapped[List["Product"]] = relationship("Product", back_populates="ProducingTask")

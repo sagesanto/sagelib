@@ -26,6 +26,7 @@ def create_db(dbpath):
     pipeline_stmt = CreateTable(PipelineRun.__table__, if_not_exists=True).compile(pipeline_engine)
     product_stmt = CreateTable(Product.__table__, if_not_exists=True).compile(pipeline_engine)
     taskruns_stmt = CreateTable(TaskRun.__table__, if_not_exists=True).compile(pipeline_engine)
+    precursor_stmt = CreateTable(PrecursorProductAssociation.__table__, if_not_exists=True).compile(pipeline_engine)
 
     pipeline_db_session.execute(text(str(pipeline_stmt)))
     logger.info("Configured PipelineRun")
@@ -33,6 +34,8 @@ def create_db(dbpath):
     logger.info("Configured Product Table")
     pipeline_db_session.execute(text(str(taskruns_stmt)))
     logger.info("Configured TaskRun Table")
+    pipeline_db_session.execute(text(str(precursor_stmt)))
+    logger.info("Configured Precursor Table")
     pipeline_db_session.commit()
 
     pipeline_association_stmt = CreateTable(PipelineInputAssociation, if_not_exists=True).compile(pipeline_engine)
@@ -40,10 +43,10 @@ def create_db(dbpath):
     pipeline_db_session.commit()
     logger.info("Configured Pipeline Association Table")
 
-    precursor_association_stmt = CreateTable(PrecursorProductAssociation, if_not_exists=True).compile(pipeline_engine)
-    pipeline_db_session.execute(text(str(precursor_association_stmt)))
-    pipeline_db_session.commit()
-    logger.info("Configured Precursor Association Table")
+    # precursor_association_stmt = CreateTable(PrecursorProductAssociation, if_not_exists=True).compile(pipeline_engine)
+    # pipeline_db_session.execute(text(str(precursor_association_stmt)))
+    # pipeline_db_session.commit()
+    # logger.info("Configured Precursor Association Table")
 
     logger.info("Done configuring database")
     logger.info("")
