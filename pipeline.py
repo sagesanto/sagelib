@@ -116,11 +116,13 @@ class PipelineDB:
         self.connect()
 
 class Task(ABC):
-    def __init__(self, name):
+    def __init__(self, name,filters=None):
         self.name = name
         self.config = None
         self.outdir = None
         self.logger = None
+        # logical expressions that will be applied to all product queries that use self.find_products
+        self.filters= filters or {}
 
     @abstractmethod
     def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun) -> int:
@@ -147,7 +149,7 @@ class Task(ABC):
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator."""
         # if all_runs:
                 # q = self.db.query(Product).filter((Product.data_type==data_type) & (Product.data_subtype.like(data_subtype))).all()
-        return self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **filters)
+        return self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
 
     @property
     @abstractmethod
@@ -297,7 +299,8 @@ class Pipeline:
 
         # get the pipeline_run object that identifies us
         # inputs are NOT passed here (or we get a chicken-and-egg situation bc inputs need to be associated with our id, which doesn't exist until after this)
-        self.pipeline_run = self.db.record_pipeline_start(self.name,self.version,current_dt_utc(),self.config,self.logfile)
+        pipeline_start = current_dt_utc()
+        self.pipeline_run = self.db.record_pipeline_start(self.name,self.version,pipeline_start,self.config,self.logfile)
         # register the inputs. they'll be added to the db if they dont already exist. 
         self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.inputs]
 
@@ -337,10 +340,11 @@ class Pipeline:
             else:
                 self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code {code}")
         self.success = len(self.failed)==0 and len(self.crashed)==0
+        pipeline_end = current_dt_utc()
         if self.success:
-            self.logger.info(f"Successfully finished pipeline run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
+            self.logger.info(f"Successfully finished pipeline run {self.pipeline_run.ID} (pipeline {self.name} v{self.version}) (duration: {pipeline_end-pipeline_start})")
         else:
-            self.logger.error(f"Unsuccessfully finished pipeline run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
+            self.logger.error(f"Unsuccessfully finished pipeline run {self.pipeline_run.ID} (pipeline {self.name} v{self.version}) (duration: {pipeline_end-pipeline_start})")
             self.logger.warning(f"Failed: {', '.join(self.failed)}")
             if self.crashed:
                 self.logger.warning(f"Crashed: {', '.join(self.crashed)}")
