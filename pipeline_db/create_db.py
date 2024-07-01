@@ -4,8 +4,7 @@ from os.path import abspath, join, dirname, pardir
 
 
 sys.path.append(dirname(__file__))
-from db_config import configure_db
-from models import PipelineInputAssociation, PrecursorProductAssociation, PipelineRun, Product, TaskRun
+
 
 from sqlalchemy.schema import CreateTable
 from sqlalchemy import text
@@ -15,10 +14,12 @@ sys.path.append(parent_dir)
 
 from pipeline_utils import configure_logger
 
-sys.path.remove(parent_dir)
-sys.path.remove(dirname(__file__))
+# sys.path.remove(parent_dir)
+# sys.path.remove(dirname(__file__))
 
 def create_db(dbpath):
+    from db_config import configure_db
+    from models import PipelineInputAssociation, PrecursorProductAssociation, PipelineRun, Product, TaskRun
     logger = configure_logger("DB Creation", join(dirname(dbpath),"db_config.log"))
     
     pipeline_db_session, pipeline_engine = configure_db(dbpath)

@@ -1,4 +1,7 @@
-from Frame import Frame
+try:
+    from Frame import Frame
+except: 
+    from sagelib import Frame
 import numpy as np
 from datetime import datetime
 from photutils.segmentation import deblend_sources

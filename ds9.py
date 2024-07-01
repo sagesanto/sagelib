@@ -2,8 +2,10 @@ import astropy
 import astromatic_wrapper as aw
 from argparse import ArgumentParser
 import numpy as np
-
-from .pipeline_utils import check_sextractor_flags, ldac_to_table
+try:
+    from pipeline_utils import check_sextractor_flags, ldac_to_table
+except:
+    from .pipeline_utils import check_sextractor_flags, ldac_to_table
 
 # REGION RADIUS SHOULD BE A STRING WITH " in it (ARCSEC) IF PHYSICAL IS FALSE
 def df_to_ds9(df,outname,xname,yname,physical=False,region_radius=5,color="green"):

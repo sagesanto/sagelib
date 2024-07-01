@@ -1,0 +1,3 @@
+To make documentation, cd to docs/source and run
+
+sphinx-build -b html . ../build

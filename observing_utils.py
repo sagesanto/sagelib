@@ -14,8 +14,10 @@ from datetime import datetime, timedelta, timezone
 from datetime import UTC as dtUTC
 from astropy.time import Time
 import pytz
-from . import utils
-
+try:
+    from . import utils
+except:
+    import utils
 # util re-exports
 current_dt_utc = utils.current_dt_utc
 
