@@ -441,7 +441,9 @@ if __name__ == "__main__":
             self.logger.info(f"Task two 1 sub:product: \n{str(task_two_1_sub)}")
             self.logger.info(f"All products from this run: {self.find_products("%")}")
             self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
-            self.logger.info(f"All derivatives: {task_one_out.all_derivatives()}")
+            self.logger.info(f"task_one_out all derivatives: {task_one_out.all_derivatives()}")
+            self.logger.info(f"Inputs[0] all derivatives: {inputs[0].all_derivatives()}")
+            self.logger.info(f"Inputs[0] all derivatives only this run: {inputs[0].all_derivatives(pipeline_run_id=self.pipeline_run.ID)}")
 
             return 0
         

@@ -180,7 +180,7 @@ class Product(pipeline_base):
         return {func(self):res}
     
     # what a horrendous mess. why did i do this to myself
-    def all_derivatives(self):
+    def all_derivatives(self,pipeline_run_id=None):
         """Traverses tree of derivatives, returning all as a flattened list."""
 
         deriv_tree = self.traverse_derivatives(lambda s: s)
@@ -191,11 +191,14 @@ class Product(pipeline_base):
         def extract_derivs(tree):
             contents = []
             if isinstance(tree,Product):
-                return [tree]
+                if not pipeline_run_id or tree.producing_pipeline_run_id==pipeline_run_id:
+                    return [tree]
             if isinstance(tree,dict):
                 for k, v in tree.items():
-                    contents.extend(extract_derivs(v))
-                    contents.append(k)
+                    if not pipeline_run_id or k.producing_pipeline_run_id==pipeline_run_id or k==self:
+                        contents.extend(extract_derivs(v))
+                        if k != self:
+                            contents.append(k)
             if isinstance(tree,list):
                 for l in tree:
                     contents.extend(extract_derivs(l))
