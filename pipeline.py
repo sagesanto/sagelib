@@ -4,12 +4,15 @@ from abc import ABC, abstractmethod
 import logging
 import logging.config
 from typing import List
-
+from sqlalchemy import inspect
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
-
-from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
-from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
+try:
+    from . import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+    from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
+except:
+    from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+    from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
 
@@ -30,6 +33,7 @@ def mod(path): return join(MODULE_PATH,path)
 #         self.product_location, self.ID, self.flags, self.is_input, self.data_subtype = product_location, ID, flags, is_input, data_subtype
 
 class PipelineDB:
+    """test str"""
     def __init__(self, dbpath, logger):
         self.logger = logger
         if not exists(dbpath):
@@ -110,10 +114,9 @@ class PipelineDB:
 
     def close(self):
         self.session.close()
-    
-    def refresh(self):
+
+    def __del__(self):
         self.close()
-        self.connect()
 
 class Task(ABC):
     def __init__(self, name,filters=None):
@@ -137,8 +140,15 @@ class Task(ABC):
 
     def outpath(self, file): return join(self.outdir, file)
 
-    def make_and_record_product(self, data_type, product_location, flags=None, data_subtype=None,**kwargs):
-        """Make a Product object with this task's ID, pipeline run ID, etc, add it to the database, and return it"""
+    def publish_output(self, data_type, product_location, flags=None, data_subtype=None,**kwargs) -> Product:
+        """Make a Product object with this task's ID, pipeline run ID, etc, add it to the database, and return it
+        
+        For example, to add a newly-created WCS header with path ``outpath`` derived from some ``image_product`` to the database:
+
+        >>> wcs_product = self.publish_output("Header",outpath,flags=None,data_subtype="WCS",precursors=[image_product]])
+
+        After this, the product is in the database and correctly reflects its origin. Tasks should use :func:`publish_output()` as their preferred method of creating and recording products. 
+        """
         product_location = abspath(product_location)
         product = Product(data_type, self.name, now_stamp(), product_location, is_input=0, 
                           producing_pipeline_run_id=self.pipeline_run.ID, producing_task_run_id=self.task_run.ID, flags=flags, data_subtype=data_subtype, **kwargs)
@@ -146,7 +156,21 @@ class Task(ABC):
         return product
 
     def find_products(self, data_type, **filters) -> List[Product]:
-        """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator."""
+        """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
+        
+        For example, to find Headers of subtype 'WCS'::
+
+        >> scamp_headers = self.find_products(data_type="Header",data_subtype="WCS")
+
+        Headers of any subtype::
+
+        >> scamp_headers = self.find_products(data_type="Header")
+
+        Headers with any non-None subtype::
+
+        >> scamp_headers = self.find_products(data_type="Header",data_subtype="%")
+        
+        """
         # if all_runs:
                 # q = self.db.query(Product).filter((Product.data_type==data_type) & (Product.data_subtype.like(data_subtype))).all()
         return self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
@@ -303,13 +327,17 @@ class Pipeline:
         self.pipeline_run = self.db.record_pipeline_start(self.name,self.version,pipeline_start,self.config,self.logfile)
         # register the inputs. they'll be added to the db if they dont already exist. 
         self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.inputs]
-
+        print("Inputs after registration:")
+        print([inspect(i).dict for i in self.inputs])
+        print("Input sessions after registration:")
+        print([inspect(i).session for i in self.inputs])
         self.logger.info(f"Beginning run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
             start_dt = current_dt_utc()
             self.logger.info(f"Began task '{task.name}' ({i+1}/{len(self.tasks)})")
             code = -1
             task_run = self.db.record_task_start(task.name,start_dt,self.pipeline_run.ID)
+            self.db.session.expire_all()
             try:
                 # this is using the task's __call__, not constructing it:
                 code = task(self.inputs, self.outdir, self.config, self.logfile, self.pipeline_run, self.db, task_run)
@@ -352,6 +380,7 @@ class Pipeline:
                 self.logger.info("No crashes.")
         self.logger.info(f"Succeeded: {self.succeeded}")
         self.db.record_pipeline_end(self.pipeline_run,current_dt_utc(),self.success,self.failed,self.crashed)
+        self.db.session.expire_all()
         return self.success
 
 if __name__ == "__main__":
@@ -369,7 +398,7 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_TEST")) 
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
-            outproduct = self.make_and_record_product("test_one","nowhere,yet",precursors=self.inputs)
+            outproduct = self.publish_output("test_one","test one output loc",precursors=self.inputs)
             # raise RuntimeError("I'm going to crash now!")
             return 0
 
@@ -398,15 +427,21 @@ if __name__ == "__main__":
         def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun):
             super().__call__(inputs, outdir, config, logfile, pipeline_run, db, task_run)
             self.logger.info(self.config("TEST_SET_ONE"))
-            task_one_out = self.db.query(Product).filter((Product.task_name=="test task one") & (Product.ProducingPipeline==self.pipeline_run)).first()
+            task_one_out = self.find_products("test_one")[0]
             # test making a Product whose precursors are the inputs + the task one output
             precursors = [task_one_out]
-            precursors.extend(inputs)
-            task_two_out = self.make_and_record_product("test_two","nowhere, yet",precursors=precursors)
+            # precursors.extend(inputs)
+            task_two_out_1 = self.publish_output("test_two","test_two_1 output loc",precursors=precursors)
+            task_two_out_2 = self.publish_output("test_two","test_two_2 output loc",precursors=precursors)
+            task_two_1_sub = self.publish_output("test_two","test_two_3 output loc",precursors=[task_two_out_1])
             self.logger.info(f"Input: \n{str(inputs[0])}")
             self.logger.info(f"Task one's product: \n{str(task_one_out)}")
-            self.logger.info(f"Task two's product: \n{str(task_two_out)}")
+            self.logger.info(f"Task two product 1: \n{str(task_two_out_1)}")
+            self.logger.info(f"Task two product 2: \n{str(task_two_out_2)}")
+            self.logger.info(f"Task two 1 sub:product: \n{str(task_two_1_sub)}")
             self.logger.info(f"All products from this run: {self.find_products("%")}")
+            self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
+            self.logger.info(f"All derivatives: {task_one_out.all_derivatives()}")
 
             return 0
         
@@ -434,8 +469,20 @@ if __name__ == "__main__":
     test_task_one = TestTaskOne("test task one")
     test_task_two = TestTaskTwo("test task two")
 
-    test_input = Product("test_input","INPUT", now_stamp(),"nowhere yet",is_input=1)
-    test_input_2 = Product("test_input","INPUT", now_stamp(),"nowhere yet 2",is_input=1)
+    test_input = Product("test_input","INPUT", now_stamp(),"test_input loc",is_input=1)
+    test_input_2 = Product("test_input","INPUT", now_stamp(),"test_input 2 loc",is_input=1)
 
     pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
     success = pipeline.run()
+    # insp = inspect(test_input)
+    # print("Session:",insp.session)
+    # print("Info:",insp.dict)
+    # print("deleted:",insp.deleted)
+    # print("detached:",insp.detached)
+    # print("pending:",insp.pending)
+    # print("persistent:",insp.persistent)
+    # print("transient:",insp.transient)
+    # print("unloaded:",insp.unloaded)
+    # pipeline.db.session.refresh(test_input)
+    # print("traversal:")
+    # print(test_input.traverse_derivatives(lambda p: p.product_location))
