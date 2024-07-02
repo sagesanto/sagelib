@@ -3,6 +3,7 @@ import tomli
 from datetime import datetime, timedelta
 import pytz
 from pytz import UTC
+from typing import List, Any
 
 class Config:
     def __init__(self,filepath,default_env_key="CONFIG_DEFAULTS"):
@@ -19,12 +20,16 @@ class Config:
                 print(f"ERROR: config tried to load defaults file {self._default_path} but encountered the following: {e}")
                 print(f"Preceding without defaults")
 
-    def choose_profile(self, profile_name):
+    def choose_profile(self, profile_name:str):
         self.selected_profile = self._cfg[profile_name]
         self.selected_profile_name = profile_name
         return self
     
-    def load_defaults(self, filepath):
+    def clear_profile(self):
+        self.selected_profile = None
+        self.selected_profile_name = None
+    
+    def load_defaults(self, filepath:str):
         self._defaults = _read_config(filepath)
         self._default_path = filepath
 
@@ -32,12 +37,12 @@ class Config:
     def has_defaults(self):
         return self._defaults is not None
     
-    def _get_default(self, key):
+    def _get_default(self, key:str):
         if not self.has_defaults:
             raise AttributeError("No default configuration set!")
         return self._defaults[key]
 
-    def get_default(self,key,default=None):
+    def get_default(self, key:str, default:Any|None=None):
         try: 
             self._get_default(key)
         except KeyError:
@@ -99,7 +104,7 @@ def _read_config(config_path):
         cfg = tomli.load(f)
     return cfg
 
-def multi_replace(string:str, old_strs, subst_str):
+def multi_replace(string:str, old_strs:list[str], subst_str:str) -> str:
     # WARNING: this is clumsy and can get behave unexpectedly if subst_str and one of old_strs are too similar 
     for s in old_strs:
         string = string.replace(s, subst_str)

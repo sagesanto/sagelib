@@ -1,17 +1,16 @@
+from __future__ import annotations
 # Sage Santomenna 2023
 # models used by sqlalchemy to understand the database
-from typing import List
-
-import os, sys
+from typing import List, Callable, Tuple, Union, Any,Mapping
+import sys
 from os.path import abspath, join, dirname, pardir
-import sqlalchemy
-from sqlalchemy import select, insert, and_, or_
-from sqlalchemy import Column, Integer, String, BLOB, ForeignKey, Table, PrimaryKeyConstraint
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from datetime import datetime
 
-from sqlalchemy import create_engine, Column, Integer, String, Numeric, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session
+
+from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
 
 sys.path.append(dirname(__file__))
 
@@ -19,6 +18,7 @@ parent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(parent_dir)
 
 from pipeline_db.db_config import pipeline_base
+from utils import dt_to_utc, tts
 
 sys.path.remove(parent_dir)
 sys.path.remove(dirname(__file__))
@@ -72,7 +72,7 @@ class PipelineRun(pipeline_base):
     def __repr__(self):
         return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
     
-    def get_related_products(self, dbsession, **filters):
+    def get_related_products(self, dbsession:scoped_session, **filters:Mapping[str,Any]):
         """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
         
         Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. 
@@ -114,7 +114,7 @@ class Product(pipeline_base):
 
     :param data_type: The type of the data that this product represents, ex "FitsImage"
     :param task_name: The name of the task that created this product 
-    :param creation_dt: A datetime string in module format indicating the time at which this product was created
+    :param creation_dt: `datetime` object representing when this product was created 
     :param product_location: A string representing the full path to the data that this product represents 
     :param is_input: Integer. 1 if this product was not output by any Pipeline, ever. 0 otherwise
     :param producing_pipeline_run_id=None: The ID of the Pipeline that produced this output, if any
@@ -145,12 +145,12 @@ class Product(pipeline_base):
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
 
-    def __init__(self, data_type, task_name, creation_dt, product_location, is_input, 
-                 producing_pipeline_run_id=None, producing_task_run_id=None, flags=None, data_subtype=None, **kwargs):
-        """hi"""
+    def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
+                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
+        date_str = tts(dt_to_utc(creation_dt))
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id,
-                         creation_dt=creation_dt, product_location=product_location,
+                         creation_dt=date_str, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
 
     def __str__(self):
@@ -160,8 +160,8 @@ class Product(pipeline_base):
     def __repr__(self):
         return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}'"
     
-    def traverse_derivatives(self,func,*args,maxdepth=-1,**kwargs):
-        """Recursively pply a function to each of the products in the derivative tree of this product, collecting and returning its result
+    def traverse_derivatives(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],maxdepth:int=-1,**kwargs:Mapping[str,Any]):
+        """Recursively apply a function to each of the products in the derivative tree of this product, collecting and returning its result
         
         Does a tree-like walk of derivatives of this product, calling ``func`` on each and collecting the results in a dictionary of {:class:`Product` : returned result}.
         
@@ -180,7 +180,7 @@ class Product(pipeline_base):
         return {func(self):res}
     
     # what a horrendous mess. why did i do this to myself
-    def all_derivatives(self,pipeline_run_id=None):
+    def all_derivatives(self,pipeline_run_id:int | None=None)-> List[Product]:
         """Traverses tree of derivatives, returning all as a flattened list."""
 
         deriv_tree = self.traverse_derivatives(lambda s: s)
@@ -188,7 +188,7 @@ class Product(pipeline_base):
         if not deriv_tree:
             return []
 
-        def extract_derivs(tree):
+        def extract_derivs(tree: dict[Product,Any]):
             contents = []
             if isinstance(tree,Product):
                 if not pipeline_run_id or tree.producing_pipeline_run_id==pipeline_run_id:

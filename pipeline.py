@@ -3,7 +3,7 @@ from os.path import abspath, join, dirname, exists, basename
 from abc import ABC, abstractmethod
 import logging
 import logging.config
-from typing import List
+from typing import List, Mapping, Any
 from sqlalchemy import inspect
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
@@ -119,28 +119,55 @@ class PipelineDB:
         self.close()
 
 class Task(ABC):
-    def __init__(self, name,filters=None):
+    def __init__(self, name:str, filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
+        """One step of a pipeline process
+
+        :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
+        :type name: str
+        :param filters: a dictionary of key, value pairs that restricts :class:`Product` searches to only returning those where all of their `key` properties have the value `value` , defaults to None
+        :type filters: dict[str,str] | None, optional
+        :param cfg_profile_name: name of a profile to load from the config for the duration of this task's run. options in the profile will override global and default settings, defaults to None
+        :type cfg_profile_name: str | None, optional
+        """
         self.name = name
-        self.config = None
         self.outdir = None
-        self.logger = None
+        self.cfg_profile_name = cfg_profile_name
         # logical expressions that will be applied to all product queries that use self.find_products
         self.filters= filters or {}
 
-    @abstractmethod
     def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun) -> int:
+        """
+        Called by :func:`Pipeline.run`. Does important setup, then calls :func:`Task.run()`
+        """
         self.logfile = logfile
         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
         self.inputs, self.outdir, self.config = inputs, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
+        
+        # choose config profile if given
+        if self.cfg_profile_name:
+            self.config.choose_profile(self.cfg_profile_name)
+
+        # add filters from config profile, if they exist
+        filters_from_cfg = self.config.get("filters")
+        if filters_from_cfg:
+            for k,v in filters_from_cfg.items():
+                self.filters[k] = v
+        
+        return self.run()
+
+    @abstractmethod
+    def run(self) -> int:
+        """Run the pipeline task. Should take no arguments. Not invoked directly! Pipeline invokes through __call__ and does important setup in the process"""
+        pass
 
     @property
     def ID(self):
         return self.task_run.ID
 
-    def outpath(self, file): return join(self.outdir, file)
+    def outpath(self, file:str): return join(self.outdir, file)
 
-    def publish_output(self, data_type, product_location, flags=None, data_subtype=None,**kwargs) -> Product:
+    def publish_output(self, data_type:str, product_location:str, flags:int | None=None, data_subtype: str | None=None,**kwargs:Mapping[str,Any]) -> Product:
         """Make a Product object with this task's ID, pipeline run ID, etc, add it to the database, and return it
         
         For example, to add a newly-created WCS header with path ``outpath`` derived from some ``image_product`` to the database:
@@ -148,14 +175,25 @@ class Task(ABC):
         >>> wcs_product = self.publish_output("Header",outpath,flags=None,data_subtype="WCS",precursors=[image_product]])
 
         After this, the product is in the database and correctly reflects its origin. Tasks should use :func:`publish_output()` as their preferred method of creating and recording products. 
+
+        :param data_type: The data type of the output. Can be anything, but is used by :func:Task.find_products() to filter for certain types of products
+        :type data_type: str
+        :param product_location: the path / locator of the product that can be used to access it
+        :type product_location: str
+        :param flags: optional integer used to denote flags. interpretation of flags is left to individual tasks, defaults to None
+        :type flags: int | None, optional
+        :param data_subtype: the subtype of the data. same idea as `data_type`, defaults to None
+        :type data_subtype: str | None, optional
+        :return: a newly created Product that has just been added to the database.
+        :rtype: Product
         """
         product_location = abspath(product_location)
-        product = Product(data_type, self.name, now_stamp(), product_location, is_input=0, 
+        product = Product(data_type, self.name, current_dt_utc(), product_location, is_input=0, 
                           producing_pipeline_run_id=self.pipeline_run.ID, producing_task_run_id=self.task_run.ID, flags=flags, data_subtype=data_subtype, **kwargs)
         self.db.record_product(product)
         return product
 
-    def find_products(self, data_type, **filters) -> List[Product]:
+    def find_products(self, data_type: str, **filters: Mapping[str,Any]) -> List[Product]:
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
         
         For example, to find Headers of subtype 'WCS'::
@@ -177,36 +215,39 @@ class Task(ABC):
 
     @property
     @abstractmethod
-    def required_params(self):
+    def required_params(self) -> List[str]:
         """Return a list of keys that must be in the config or set by a prior pipeline task for this one to work"""
-        pass
+        return []
 
     @property
     @abstractmethod
-    def will_set(self):
+    def will_set(self) -> List[str]:
         """Return a list of keys in the config that this task will set while running"""
-        pass
+        return []
 
     @property
     @abstractmethod
-    def required_product_types(self):
+    def required_product_types(self) -> List[str]:
         """Return a list of datatypes that must be passed as input or produced by a prior pipeline task for this one to work. Datatypes can be denoted as 'datatype' or 'datatype.subtype' """
         return []
     
     @property 
     @abstractmethod
-    def product_types_produced(self):
+    def product_types_produced(self) -> List[str]:
         """Return a list of datatypes that this pipeline step will produce. Datatypes can be denoted as 'datatype' or 'datatype.subtype' """
         return []
 
     @property
     @abstractmethod
-    def description(self):
+    def description(self) -> str:
+        """Return a brief description of this task
+        :rtype: str
+        """
         pass
 
 
 class Pipeline:
-    def __init__(self, pipeline_name, tasks:List[Task], inputs:List[Product], outdir, profile_name, config_path, version, default_cfg_path=None):
+    def __init__(self, pipeline_name: str, tasks:List[Task], inputs:List[Product], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None):
         self.name = pipeline_name
         # list of *constructed* task objects, not just classes
         self.tasks = tasks
@@ -214,9 +255,9 @@ class Pipeline:
         # self.inputs = [abspath(f) for f in inputs]
         self.outdir = outdir
         os.makedirs(outdir,exist_ok=True)
-        self.profile_name = profile_name
+        # self.profile_name = profile_name
         self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH")
-        self.config.choose_profile(profile_name) # this is the scoped config in the file
+        # self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = abspath(join(outdir,f"{self.name}.log"))
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
         # db can ONLY be set in the default cfg
@@ -243,6 +284,9 @@ class Pipeline:
         req = self.get_required_keys()
         set_by_tasks = []
         for task, keys in self.get_required_keys().items():
+            self.config.clear_profile()
+            if task.cfg_profile_name:
+                self.config.choose_profile(task.cfg_profile_name)
             for key in keys:
                 try:
                     self.config[key]
@@ -304,13 +348,13 @@ class Pipeline:
             self.logger.warning(f"It looks like task '{task.name}' (#{taskrun.ID}) failed to produce data products of the following types, despite promising to do so: {missing_product_types}. This is probably a programming error. The pipeline run will continue, but this could cause serious problems.")
         
 
-    def get_required_keys(self):
+    def get_required_keys(self) -> dict[Task,str]:
         keywords = {}
         for task in self.tasks:
             keywords[task] = task.required_params
         return keywords
     
-    def run(self):
+    def run(self) -> int:
         self.succeeded = []
         self.failed = []
         self.crashed = []
@@ -339,6 +383,7 @@ class Pipeline:
             task_run = self.db.record_task_start(task.name,start_dt,self.pipeline_run.ID)
             self.db.session.expire_all()
             try:
+                self.config.clear_profile()
                 # this is using the task's __call__, not constructing it:
                 code = task(self.inputs, self.outdir, self.config, self.logfile, self.pipeline_run, self.db, task_run)
                 # we need tasks to return integer codes. if this isn't an int, the task was written wrong
@@ -367,6 +412,7 @@ class Pipeline:
                 self.logger.warning(f"Failed task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code {code}")
             else:
                 self.logger.info(f"Finished task {task.name} ({i+1}/{len(self.tasks)}) (duration: {end_dt-start_dt}) with code {code}")
+        self.config.clear_profile()
         self.success = len(self.failed)==0 and len(self.crashed)==0
         pipeline_end = current_dt_utc()
         if self.success:
@@ -389,8 +435,7 @@ if __name__ == "__main__":
         load_dotenv(r"pipeline_db\.env")
 
     class TestTaskOne(Task):
-        def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun):
-            super().__call__(inputs, outdir, config, logfile, pipeline_run, db, task_run)
+        def run(self):
             self.logger.info("hi")
             self.logger.info(self.config)
             self.logger.info(repr(self.config))
@@ -424,8 +469,7 @@ if __name__ == "__main__":
     
 
     class TestTaskTwo(Task):
-        def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun):
-            super().__call__(inputs, outdir, config, logfile, pipeline_run, db, task_run)
+        def run(self):
             self.logger.info(self.config("TEST_SET_ONE"))
             task_one_out = self.find_products("test_one")[0]
             # test making a Product whose precursors are the inputs + the task one output
@@ -434,16 +478,16 @@ if __name__ == "__main__":
             task_two_out_1 = self.publish_output("test_two","test_two_1 output loc",precursors=precursors)
             task_two_out_2 = self.publish_output("test_two","test_two_2 output loc",precursors=precursors)
             task_two_1_sub = self.publish_output("test_two","test_two_3 output loc",precursors=[task_two_out_1])
-            self.logger.info(f"Input: \n{str(inputs[0])}")
+            self.logger.info(f"Input: \n{str(self.inputs[0])}")
             self.logger.info(f"Task one's product: \n{str(task_one_out)}")
             self.logger.info(f"Task two product 1: \n{str(task_two_out_1)}")
             self.logger.info(f"Task two product 2: \n{str(task_two_out_2)}")
             self.logger.info(f"Task two 1 sub:product: \n{str(task_two_1_sub)}")
-            self.logger.info(f"All products from this run: {self.find_products("%")}")
+            self.logger.info(f"All products from this run: {self.find_products('%')}")
             self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
             self.logger.info(f"task_one_out all derivatives: {task_one_out.all_derivatives()}")
-            self.logger.info(f"Inputs[0] all derivatives: {inputs[0].all_derivatives()}")
-            self.logger.info(f"Inputs[0] all derivatives only this run: {inputs[0].all_derivatives(pipeline_run_id=self.pipeline_run.ID)}")
+            self.logger.info(f"Inputs[0] all derivatives: {self.inputs[0].all_derivatives()}")
+            self.logger.info(f"Inputs[0] all derivatives only this run: {self.inputs[0].all_derivatives(pipeline_run_id=self.pipeline_run.ID)}")
 
             return 0
         
@@ -468,13 +512,13 @@ if __name__ == "__main__":
             return "A test task"
 
 
-    test_task_one = TestTaskOne("test task one")
-    test_task_two = TestTaskTwo("test task two")
+    test_task_one = TestTaskOne("test task one",cfg_profile_name="Test")
+    test_task_two = TestTaskTwo("test task two",cfg_profile_name="Test")
 
-    test_input = Product("test_input","INPUT", now_stamp(),"test_input loc",is_input=1)
-    test_input_2 = Product("test_input","INPUT", now_stamp(),"test_input 2 loc",is_input=1)
+    test_input = Product("test_input","INPUT", current_dt_utc(),"test_input loc",is_input=1)
+    test_input_2 = Product("test_input","INPUT", current_dt_utc(),"test_input 2 loc",is_input=1)
 
-    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","Test","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
+    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
     success = pipeline.run()
     # insp = inspect(test_input)
     # print("Session:",insp.session)
