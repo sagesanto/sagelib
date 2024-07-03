@@ -371,10 +371,10 @@ class Pipeline:
         self.pipeline_run = self.db.record_pipeline_start(self.name,self.version,pipeline_start,self.config,self.logfile)
         # register the inputs. they'll be added to the db if they dont already exist. 
         self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.inputs]
-        print("Inputs after registration:")
-        print([inspect(i).dict for i in self.inputs])
-        print("Input sessions after registration:")
-        print([inspect(i).session for i in self.inputs])
+        # print("Inputs after registration:")
+        # print([inspect(i).dict for i in self.inputs])
+        # print("Input sessions after registration:")
+        # print([inspect(i).session for i in self.inputs])
         self.logger.info(f"Beginning run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
             start_dt = current_dt_utc()
