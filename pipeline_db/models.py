@@ -17,13 +17,15 @@ sys.path.append(dirname(__file__))
 parent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(parent_dir)
 
-from pipeline_db.db_config import pipeline_base
+from pipeline_db.db_config import pipeline_base, mapper_registry
 from utils import dt_to_utc, tts
 
 sys.path.remove(parent_dir)
 sys.path.remove(dirname(__file__))
 
 PipelineInputAssociation = None
+
+mapper_registry.configure()
 
 if not PipelineInputAssociation:
     # table to match observations with obs codes
@@ -36,15 +38,7 @@ if not PipelineInputAssociation:
         extend_existing=True
     )
 
-class PrecursorProductAssociation(pipeline_base):
-    __tablename__ = 'PrecursorProductAssociation'
 
-    PrecursorID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
-    ProductID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
-
-    # Define the relationship to Product table (not needed for direct querying)
-    precursor = relationship('Product', foreign_keys=[PrecursorID])
-    product = relationship('Product', foreign_keys=[ProductID])
 
 
 class PipelineRun(pipeline_base):
@@ -139,8 +133,12 @@ class Product(pipeline_base):
                               secondary='PrecursorProductAssociation',
                               primaryjoin='Product.ID == PrecursorProductAssociation.ProductID',
                               secondaryjoin='Product.ID == PrecursorProductAssociation.PrecursorID',
-                              backref='derivatives',
-                              overlaps="product")
+                              overlaps="products, precursors")
+    derivatives = relationship("Product",
+                               secondary='PrecursorProductAssociation',
+                               primaryjoin='Product.ID == PrecursorProductAssociation.PrecursorID',
+                               secondaryjoin='Product.ID == PrecursorProductAssociation.ProductID',
+                               overlaps="precursors, products")
     ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
@@ -221,3 +219,13 @@ class TaskRun(pipeline_base):
 
     def __repr__(self):
         return f"'{self.TaskName}' (run #{self.ID})"
+    
+
+class PrecursorProductAssociation(pipeline_base):
+    __tablename__ = 'PrecursorProductAssociation'
+
+    PrecursorID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+    ProductID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+    
+    precursor = relationship('Product', foreign_keys=[PrecursorID], overlaps="derivatives,precursors")
+    product = relationship('Product', foreign_keys=[ProductID], overlaps="derivatives,precursors")

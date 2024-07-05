@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import scoped_session, sessionmaker, registry
 
 grandparent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(grandparent_dir)
@@ -73,7 +73,9 @@ def setSQLitePragma(dbapi_connection, connection_record):
 #     pipeline_db_session.close()
 #     pipeline_db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=pipeline_engine, ))
 
-pipeline_base = declarative_base()
+mapper_registry = registry()
+pipeline_base = mapper_registry.generate_base()
+# pipeline_base = declarative_base()
 
 def configure_db(dbpath):
     logger = configure_logger('DB Config', join(dirname(dbpath),"db_config.log"))
