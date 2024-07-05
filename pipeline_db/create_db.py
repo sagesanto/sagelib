@@ -1,7 +1,7 @@
 # Sage Santomenna 2024
 import os, sys
 from os.path import abspath, join, dirname, pardir
-
+import shutil
 
 sys.path.append(dirname(__file__))
 
@@ -22,6 +22,9 @@ def create_db(dbpath):
     from models import PipelineInputAssociation, PrecursorProductAssociation, PipelineRun, Product, TaskRun
     logger = configure_logger("DB Creation", join(dirname(dbpath),"db_config.log"))
     
+    if os.path.exists(dbpath):
+        shutil.remove(dbpath)
+
     pipeline_db_session, pipeline_engine = configure_db(dbpath)
 
     pipeline_stmt = CreateTable(PipelineRun.__table__, if_not_exists=True).compile(pipeline_engine)
