@@ -261,6 +261,8 @@ class Pipeline:
         self.logfile = abspath(join(outdir,f"{self.name}.log"))
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
         # db can ONLY be set in the default cfg
+        if default_cfg_path:
+            self.config.load_defaults(default_cfg_path)
         self.dbpath = self.config._get_default("DB_PATH")
         print(self.dbpath)
         self.db = PipelineDB(self.dbpath, self.logger)
@@ -273,8 +275,6 @@ class Pipeline:
         self.succeeded_task_runs = []
         self.pipeline_run = None
         self.success = None
-        if default_cfg_path:
-            self.config.load_defaults(default_cfg_path)
         self.task_runs = []
         self.validate_pipeline()
     
