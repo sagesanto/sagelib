@@ -16,7 +16,10 @@ from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
 def product_info(session, filepath, verbose=False):
     prod = session.query(Product).filter(Product.product_location==filepath).first()
     if not prod:
-        raise ValueError(f"Couldn't find a product with filepath '{filepath}'")
+        filepath = os.path.abspath(filepath)
+        prod = session.query(Product).filter(Product.product_location==filepath).first()
+        if not prod:
+            raise ValueError(f"Couldn't find a product with filepath '{filepath}'")
     
     lines = []
 
