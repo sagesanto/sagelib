@@ -38,9 +38,6 @@ if not PipelineInputAssociation:
         extend_existing=True
     )
 
-
-
-
 class PipelineRun(pipeline_base):
     """ A permanent record that stores information about a past or ongoing Pipeline run.
     
@@ -80,6 +77,31 @@ class PipelineRun(pipeline_base):
             (Product.producing_pipeline_run_id == self.ID) | 
             (Product.UsedByRunsAsInput.any(PipelineRun.ID == self.ID))
         )
+        if filters:
+            for colname, cond_val in filters.items():
+                col = getattr(Product,colname)
+                if col is None:
+                    raise AttributeError(f"Product table has no column {colname}")
+                query = query.filter(col.like(cond_val))
+        related_products = query.all()
+        return related_products
+    
+    def get_group_products(self, group_id:str, dbsession:scoped_session, **filters:Mapping[str,Any]):
+        """Query for products among this PipelineRun's outputs that were produced by a task with `GroupID` == `group_id`. optionally, add keyword arguments to filter Products.
+        
+        returns products ordered by creation dt, descending 
+        :param group_id: the id of the group from which to look for products
+        :param dbsession: sqlalchemy database session with which to query
+        :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
+
+        :returns: list of products
+        """
+        
+        query = dbsession.query(Product).filter(
+            (Product.producing_pipeline_run_id == self.ID) &
+            (Product.ProducingTask.GroupID == group_id)
+        ).order_by(Product.creation_dt.desc())
+
         if filters:
             for colname, cond_val in filters.items():
                 col = getattr(Product,colname)
@@ -142,6 +164,8 @@ class Product(pipeline_base):
     ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
+    Metadata: Mapped[List["Metadata"]] = relationship("Metadata")
+
 
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
                  producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
@@ -150,6 +174,31 @@ class Product(pipeline_base):
                          task_name=task_name, producing_task_run_id=producing_task_run_id,
                          creation_dt=date_str, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
+        self._metadata_dict = {m.Key:m.Value for m in self.Metadata}
+    
+    def __getitem__(self, index:str) -> str:
+        """Retrieve product metadata with key 'index'
+
+        :param index: the key of the metadata
+        :type index: str
+        :return: metadata value
+        :rtype: str
+        """
+        try:
+            return self._metadata_dict[index]
+        except KeyError as e:
+            raise KeyError(f"Product {repr(self)} has no metadata record with key '{index}'") from e
+    
+    def getmd(self,key:str,default_val:str) -> str:
+        """Retrieve product metadata with key 'key'. If no such metadata exists, return default_val instead.
+
+        :type key: str
+        :type default_val: str
+        :return: the value stored in the metadata record, if found, or default_val
+        :rtype: str
+        """
+        return self._metadata_dict.get(key,default_val)
+
 
     def __str__(self):
         endline, tab = '\n','\t'
@@ -208,18 +257,47 @@ class TaskRun(pipeline_base):
     """A :class:`TaskRun` object represents one run of a :class:`sagelib.pipeline.Task` . Constructed by the Pipeline."""
     __tablename__ = 'TaskRun'
 
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     TaskName = Column(String, nullable=False)
     StartTimeUTC = Column(String, nullable=False)
     EndTimeUTC = Column(String, nullable=True)
     StatusCodes = Column(Integer, nullable=True)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'))
-    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    GroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
+
     Outputs: Mapped[List["Product"]] = relationship("Product", back_populates="ProducingTask")
     Pipeline = relationship("PipelineRun",back_populates="TaskRuns")
+    Group = relationship("Group",back_populates="Tasks")
 
     def __repr__(self):
         return f"'{self.TaskName}' (run #{self.ID})"
+
+class Group(pipeline_base):
+    __tablename__ = "Group"
+
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    Name: Column(String, nullable=False)
+    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
+    ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
     
+    ParentGroup = relationship("Group", backref="ChildGroups", primaryjoin='Group.ParentGroupID == Group.ID')
+
+    Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun")
+
+    def __init__(self, PipelineRunID: int, Name: str, ParentGroupID: int | None = None, **kwargs):
+        super().__init__(PipelineRunID=PipelineRunID, Name=Name, ParentGroupID=ParentGroupID, **kwargs)
+
+class Metadata(pipeline_base):
+    __tablename__ = 'Metadata'
+
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ProductID = Column(Integer, ForeignKey('Product.ID'), nullable=False)
+    TaskID = Column(Integer, ForeignKey('TaskRun.ID'))
+    Key = Column(String, nullable=False)
+    Value = Column(String, nullable=False)
+
+    Product = relationship("Product",back_populates="Metadata")
+
 
 class PrecursorProductAssociation(pipeline_base):
     __tablename__ = 'PrecursorProductAssociation'

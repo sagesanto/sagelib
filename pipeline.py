@@ -4,14 +4,17 @@ from abc import ABC, abstractmethod
 import logging
 import logging.config
 from typing import List, Mapping, Any
-from sqlalchemy import inspect
+from sqlalchemy import inspect, insert, and_, or_
+from sqlalchemy.orm import aliased
+from __future__ import annotations
+
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
 try:
-    from . import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+    from . import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
     from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
 except:
-    from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+    from sagelib import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
     from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
@@ -25,12 +28,6 @@ def mod(path): return join(MODULE_PATH,path)
     # steps of the pipeline should create records of products that point to any precursor frames 
     # i.e. sextractor catalogs each point to a fits file, scamp headers each point to a sextractor product, 
     # products should store product type(s), pipeline run id, precise timestamps, and filepaths    
-
-# class Product:
-#     def __init__(self, data_type, pipeline_run_id, task_name, precursor_id, creation_dt, product_location, ID=None, flags=None, is_input=0, data_subtype=None):
-#         self.data_type, self.pipeline_run_id, self.task_name, self.precursor_id = data_type, pipeline_run_id, task_name, precursor_id
-#         self.creation_dt = dt_to_utc(creation_dt)
-#         self.product_location, self.ID, self.flags, self.is_input, self.data_subtype = product_location, ID, flags, is_input, data_subtype
 
 class PipelineDB:
     """test str"""
@@ -135,14 +132,21 @@ class Task(ABC):
         # logical expressions that will be applied to all product queries that use self.find_products
         self.filters= filters or {}
 
-    def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun) -> int:
+    def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:Group|None=None, group_policy:None|str=None) -> int:
         """
-        Called by :func:`Pipeline.run`. Does important setup, then calls :func:`Task.run()`
+        Called by :func:`Pipeline.run`. Does important setup, then calls :func:`Task.run()`. Group inputs are set up by TaskGroup.
+
+        :param group: the numerical id of the group this task should belong to. if None, no group association is made
+        :type group: int | None, optional
+        :param group_policy: "strict", "priority", "ignore", "previous_only", or None. defaults to None (preferred value). If this Task is part of a group and not the first task in its group to run, how should this query behave? `strict`: only return products produced by tasks in this group and pipelineRun. `priority`: if there are any products from this group in the query results, return only them. otherwise, return all results of the query. `ignore`: completely ignore group membership. `previous_only`: only return products from the most recent TaskRun in the group. useful for iterative pipeline steps that should only act on the most recent version of a product. if None, this is determined automatically.
+        :type group_policy: str | None, optional
         """
         self.logfile = logfile
         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
         self.inputs, self.outdir, self.config = inputs, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
+        self.group = group
+        self.group_policy = group_policy
         
         # choose config profile if given
         if self.cfg_profile_name:
@@ -153,7 +157,7 @@ class Task(ABC):
         if filters_from_cfg:
             for k,v in filters_from_cfg.items():
                 self.filters[k] = v
-        
+            
         return self.run()
 
     @abstractmethod
@@ -193,9 +197,18 @@ class Task(ABC):
         self.db.record_product(product)
         return product
 
-    def find_products(self, data_type: str, **filters: Mapping[str,Any]) -> List[Product]:
+    def find_products(self, data_type: str, group_policy:str|None=None, **filters: Mapping[str,Any]) -> List[Product]:
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
-        
+
+
+        :param data_type: _description_
+        :type data_type: str
+        :param group_policy: "strict", "priority", "ignore", "previous_only", or None. defaults to None. If this Task is part of a group and not the first task in its group to run, how should this query behave? `strict`: only return products produced by tasks in this group and pipelineRun. `priority`: if there are any products from this group in the query results, return only them. otherwise, return all results of the query. `ignore`: completely ignore group membership. `previous_only`: only return products from the most recent TaskRun in the group. useful for iterative pipeline steps that should only act on the most recent version of a product. if None, uses the Task's group_policy.
+        :type group_policy: str, optional
+        :return: _description_
+        :rtype: List[Product]
+
+
         For example, to find Headers of subtype 'WCS'::
 
         >> scamp_headers = self.find_products(data_type="Header",data_subtype="WCS")
@@ -207,11 +220,34 @@ class Task(ABC):
         Headers with any non-None subtype::
 
         >> scamp_headers = self.find_products(data_type="Header",data_subtype="%")
-        
         """
-        # if all_runs:
-                # q = self.db.query(Product).filter((Product.data_type==data_type) & (Product.data_subtype.like(data_subtype))).all()
-        return self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
+
+        if group_policy is None:
+            group_policy = self.group_policy
+
+        if self.group is not None:
+            group_products = self.pipeline_run.get_group_products(self.db.session, self.group.ID, data_type=data_type, **self.filters, **filters)
+            # if our policy is strict, return the group result no matter what
+            if self.group_policy == "strict":
+                return group_products
+            # if our policy is priority, return the group result if its not empty
+            elif self.group_policy == "priority" or self.group_policy == "avoid_others":
+                # this will fall through to the outer return (all related products) if group_products is empty
+                if group_products:
+                    return group_products
+            # if our policy is previous_only, return the first item (they're sorted by most recent)
+            elif self.group_policy == "previous_only":
+                if group_products:
+                    return [group_products[0]]
+                return []
+
+        all_related = self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
+        if self.group_policy == "avoid_others" and self.group is not None:
+            return [p for p in all_related if not (p.ProducingTask.GroupID and p.ProducingTask.PipelineRunID == self.pipeline_run.ID)]
+        
+        # we end up here if our group is None, our group_policy is ignore, or it's priority and we fell through
+        return all_related
+
 
     @property
     @abstractmethod
@@ -244,6 +280,70 @@ class Task(ABC):
         :rtype: str
         """
         pass
+
+
+def merge_dicts(d1,d2):
+    raise NotImplementedError()
+
+
+class TaskGroup(Task):
+    def __init__(self, name:str, tasks:List[Task|TaskGroup], filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
+        """One step of a pipeline process
+
+        :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
+        :type name: str
+        :param filters: a dictionary of key, value pairs that restricts :class:`Product` searches to only returning those where all of their `key` properties have the value `value` , defaults to None
+        :type filters: dict[str,str] | None, optional
+        :param cfg_profile_name: name of a profile to load from the config for the duration of this task's run. options in the profile will override global and default settings, defaults to None
+        :type cfg_profile_name: str | None, optional
+        """
+        self.name = name
+        self.tasks = tasks
+        self.outdir = None
+        self.cfg_profile_name = cfg_profile_name
+        # logical expressions that will be applied to all product queries that use self.find_products
+        self.filters= filters or {}
+
+    def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:Group|None=None, group_policy:None|str=None) -> int:
+        self.logfile = logfile
+        self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
+        self.inputs, self.outdir, self.config = inputs, outdir, config,
+        self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
+        
+        self.group = Group(pipeline_run.ID,self.name)
+        self.group_policy = group_policy
+        # a group got passed in, add us as a child
+        if group:
+            group.ChildGroups.append(self)
+        else:
+            self.db.add(self.group)
+        self.db.commit()
+
+        # choose config profile if given
+        if self.cfg_profile_name:
+            self.config.choose_profile(self.cfg_profile_name)
+
+        # add filters from config profile, if they exist
+        filters_from_cfg = self.config.get("filters")
+        if filters_from_cfg:
+            for k,v in filters_from_cfg.items():
+                self.filters[k] = v
+
+        products = self.find_products(data_type="%")
+        
+        products_run = 0
+        for product in products:
+            tasks_run = 0
+            for task in self.tasks:
+                group_policy = "previous_only"
+                if not tasks_run:
+                    group_policy = "ignore"
+                    task.filters["ID":product.ID] # limit the task to act only on this ID. will mess with the task grabbing other info :(
+
+                merged_filters = merge_dicts(self.filters, task.filters)
+            
+                
+
 
 
 class Pipeline:

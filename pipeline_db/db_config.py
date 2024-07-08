@@ -14,8 +14,6 @@ grandparent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(grandparent_dir)
 sys.path.append(dirname(__file__))
 
-# import utils
-# from utils import Config
 from pipeline_utils import configure_logger
 import logging
 
@@ -25,17 +23,6 @@ sys.path.remove(dirname(__file__))
 DB_PATH = None
 
 _logger = logging.getLogger(__name__)
-
-# dotenv_path = join(dirname(__file__),".env")
-# if exists(dotenv_path):
-#     from dotenv import load_dotenv
-#     load_dotenv(dotenv_path)
-
-# # db path can only be set in the defaults file!
-# cfg_path = os.getenv("PIPELINE_DEFAULTS_PATH")
-# cfg = Config(cfg_path)
-
-# DB_PATH = cfg("DB_PATH")
 
 # @event.listens_for(Engine, "before_cursor_execute")
 # def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
@@ -66,18 +53,17 @@ def setSQLitePragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
-
-# def renew_pipeline_db_session():
-#     global pipeline_db_session  # man this is bad
-#     pipeline_db_session.expire_all()
-#     pipeline_db_session.close()
-#     pipeline_db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=pipeline_engine, ))
-
 mapper_registry = registry()
 pipeline_base = mapper_registry.generate_base()
-# pipeline_base = declarative_base()
 
-def configure_db(dbpath):
+def configure_db(dbpath:str):
+    """Connect to a pipeline database 
+
+    :param dbpath: filepath of database
+    :type dbpath: str
+    :return: a pipeline database session that can be used to interact with the database, and the pipeline engine.
+    :rtype: Tuple(sqlalchemy.orm.Session, sqlalchemy.engine.Engine)
+    """
     logger = configure_logger('DB Config', join(dirname(dbpath),"db_config.log"))
 
     logger.info("Db Configuration Started")
