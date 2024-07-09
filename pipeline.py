@@ -130,6 +130,7 @@ class PipelineDB:
 
         pipeline_run.Inputs.append(product)
         self.session.commit()
+        self.session.expire_all()
         self.logger.info(f"logged {repr(product)}")
         return product
 
