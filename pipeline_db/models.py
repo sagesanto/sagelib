@@ -25,7 +25,7 @@ sys.path.remove(dirname(__file__))
 
 PipelineInputAssociation = None
 
-mapper_registry.configure()
+# mapper_registry.configure()
 
 if not PipelineInputAssociation:
     # table to match observations with obs codes
@@ -276,7 +276,7 @@ class Group(pipeline_base):
     __tablename__ = "Group"
 
     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    Name: Column(String, nullable=False)
+    Name = Column(String, nullable=False)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
     ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
     

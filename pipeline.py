@@ -92,10 +92,25 @@ class PipelineDB:
 
     def record_input_data(self,product:Product,pipeline_run:PipelineRun):
         # create records to indicate what the inputs to a pipeline are, returns product
+        self.logger.info(f"Creating input data for product {product}")
         existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
         if existing_product:
+            self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
+            # self.logger.warning("Need to link precursors and derivatives when adding input data!!")
+
+            for p in product.precursors:
+                self.logger.info(f"Logging precursor {p} to product {product}")
+                prec = self.record_input_data(p,pipeline_run)
+                if prec not in existing_product.precursors:
+                    existing_product.precursors.append(prec)
+            
+            for d in product.derivatives:
+                self.logger.info(f"Logging precursor {d} to product {product}")
+                prec = self.record_input_data(d,pipeline_run)
+                if prec not in existing_product.precursors:
+                    existing_product.precursors.append(prec)
+
             product = existing_product
-            # self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
         else:
             # if this product doesn't already exist in the db, it should be because its new and therefore does not yet have a producing_product_id
 
@@ -103,10 +118,11 @@ class PipelineDB:
             product.producing_pipeline_run_id = pipeline_run.ID
             product.creation_dt = now_stamp()
             self.session.add(product)
-            # self.logger.info(f"Made product {product}")
+            self.logger.info(f"Made product {product} (had not seen it before)")
 
         pipeline_run.Inputs.append(product)
         self.session.commit()
+        self.logger.info(f"logged {product}")
         return product
 
     def close(self):

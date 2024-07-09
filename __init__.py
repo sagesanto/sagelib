@@ -3,7 +3,7 @@ import sys,os
 try:
     from .pipeline_db.db_config import configure_db
     from .pipeline_db.models import Product, PipelineRun, TaskRun, Metadata, Group
-except:
+except ImportError:
     sys.path.append(os.path.dirname(__file__))
     from pipeline_db.db_config import configure_db
     from pipeline_db.models import Product, PipelineRun, TaskRun, Metadata, Group
