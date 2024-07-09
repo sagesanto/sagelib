@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys, os
 from os.path import abspath, join, dirname, exists, basename
 from abc import ABC, abstractmethod
@@ -6,7 +7,7 @@ import logging.config
 from typing import List, Mapping, Any
 from sqlalchemy import inspect, insert, and_, or_
 from sqlalchemy.orm import aliased
-from __future__ import annotations
+import random, string as stringlib
 
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
@@ -94,35 +95,42 @@ class PipelineDB:
         # create records to indicate what the inputs to a pipeline are, returns product
         self.logger.info(f"Creating input data for product {product}")
         existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
+        
+        precursors = []
+        derivatives = []
+        for p in product.precursors:
+            self.logger.info(f"Logging precursor {repr(p)} to product {repr(product)}")
+            precursors.append(self.record_input_data(p,pipeline_run))
+        
+        for d in product.derivatives:
+            self.logger.info(f"Logging derivative {repr(d)} to product {product}")
+            derivatives.append(self.record_input_data(d,pipeline_run))
+        
+        if precursors and derivatives:
+            self.logger.warning("Be careful about creating circular references or database abominations when setting both derivatives and precursors explicitly!")
+
         if existing_product:
             self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
             # self.logger.warning("Need to link precursors and derivatives when adding input data!!")
-
-            for p in product.precursors:
-                self.logger.info(f"Logging precursor {p} to product {product}")
-                prec = self.record_input_data(p,pipeline_run)
-                if prec not in existing_product.precursors:
-                    existing_product.precursors.append(prec)
-            
-            for d in product.derivatives:
-                self.logger.info(f"Logging precursor {d} to product {product}")
-                prec = self.record_input_data(d,pipeline_run)
-                if prec not in existing_product.precursors:
-                    existing_product.precursors.append(prec)
-
             product = existing_product
         else:
             # if this product doesn't already exist in the db, it should be because its new and therefore does not yet have a producing_product_id
-
             assert product.producing_pipeline_run_id is None
             product.producing_pipeline_run_id = pipeline_run.ID
             product.creation_dt = now_stamp()
             self.session.add(product)
             self.logger.info(f"Made product {product} (had not seen it before)")
 
+        for prec in precursors:
+            if prec not in product.precursors:
+                product.precursors.append(prec)
+        for deriv in derivatives:
+            if deriv not in product.derivatives:
+                product.derivatives.append(deriv)
+
         pipeline_run.Inputs.append(product)
         self.session.commit()
-        self.logger.info(f"logged {product}")
+        self.logger.info(f"logged {repr(product)}")
         return product
 
     def close(self):
@@ -631,7 +639,14 @@ if __name__ == "__main__":
     test_task_one = TestTaskOne("test task one",cfg_profile_name="Test")
     test_task_two = TestTaskTwo("test task two",cfg_profile_name="Test")
 
-    test_input = Product("test_input","INPUT", current_dt_utc(),"test_input loc",is_input=1)
+    test_input_3 = Product("test_input_3","INPUT", current_dt_utc(),"test_input 3 loc",is_input=1)
+
+    test_input_4 = Product(''.join(random.sample(stringlib.ascii_lowercase,7)),"INPUT", current_dt_utc(),''.join(random.sample(stringlib.ascii_lowercase,7)),is_input=1)
+    
+    test_input = Product("test_input","INPUT", current_dt_utc(),"test_input loc",is_input=1, derivatives=[test_input_3,test_input_4])
+    
+    test_input_5 = Product("test_input_5","INPUT", current_dt_utc(),"test_input 5 loc",is_input=1,precursors=[test_input_4]) # putting this in the input list causes everything to blow up for obvious reasons lol
+    
     test_input_2 = Product("test_input","INPUT", current_dt_utc(),"test_input 2 loc",is_input=1)
 
     pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")

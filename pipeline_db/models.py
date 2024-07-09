@@ -202,10 +202,15 @@ class Product(pipeline_base):
 
     def __str__(self):
         endline, tab = '\n','\t'
-        return f"{'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' created at {self.creation_dt} UTC with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives.\nProducers: Pipeline {self.ProducingPipeline}, Task {self.ProducingTask}.\nPrecursors:\n\t{(endline+tab).join([repr(p) for p in self.precursors])}\nDerivatives:\n\t{(endline+tab).join([repr(d) for d in self.derivatives])}\n"
-    
+        base_str = f"{'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' created at {self.creation_dt} UTC with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives.\nProducers: Pipeline {self.ProducingPipeline}, Task {self.ProducingTask}."
+        if self.precursors:
+            base_str += f"\nPrecursors:\n\t{(endline+tab).join([repr(p) for p in self.precursors])}"
+        if self.derivatives:
+            base_str += f"\nDerivatives:\n\t{(endline+tab).join([repr(d) for d in self.derivatives])}"
+        return base_str
+
     def __repr__(self):
-        return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}'"
+        return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives"
     
     def traverse_derivatives(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],maxdepth:int=-1,**kwargs:Mapping[str,Any]):
         """Recursively apply a function to each of the products in the derivative tree of this product, collecting and returning its result
@@ -280,7 +285,8 @@ class Group(pipeline_base):
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
     ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
     
-    ParentGroup = relationship("Group", backref="ChildGroups", primaryjoin='Group.ParentGroupID == Group.ID')
+    ParentGroup = relationship("Group", back_populates="ChildGroups")
+    ChildGroups: Mapped[List["Group"]] = relationship("Group")
 
     Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun")
 
