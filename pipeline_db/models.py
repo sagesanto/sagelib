@@ -277,21 +277,21 @@ class TaskRun(pipeline_base):
     def __repr__(self):
         return f"'{self.TaskName}' (run #{self.ID})"
 
-# class Group(pipeline_base):
-#     __tablename__ = "Group"
+class Group(pipeline_base):
+    __tablename__ = "Group"
 
-#     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-#     Name = Column(String, nullable=False)
-#     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
-#     ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    Name = Column(String, nullable=False)
+    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
+    ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
     
-#     ParentGroup = relationship("Group", back_populates="ChildGroups")
-#     ChildGroups: Mapped[List["Group"]] = relationship("Group")
+    ParentGroup = relationship("Group", back_populates="ChildGroups")
+    ChildGroups: Mapped[List["Group"]] = relationship("Group")
 
-#     Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun")
+    # Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun")
 
-#     def __init__(self, PipelineRunID: int, Name: str, ParentGroupID: int | None = None, **kwargs):
-#         super().__init__(PipelineRunID=PipelineRunID, Name=Name, ParentGroupID=ParentGroupID, **kwargs)
+    def __init__(self, PipelineRunID: int, Name: str, ParentGroupID: int | None = None, **kwargs):
+        super().__init__(PipelineRunID=PipelineRunID, Name=Name, ParentGroupID=ParentGroupID, **kwargs)
 
 class Metadata(pipeline_base):
     __tablename__ = 'Metadata'
