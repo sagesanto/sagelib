@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
 try:
-    from . import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
+    from . import PipelineRun, Product, TaskRun, Metadata, TaskGroup as TaskGroupModel, ProductGroup, pipeline_utils, utils, configure_db
     from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
-except:
-    from sagelib import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
+except ImportError:
+    from sagelib import PipelineRun, Product, TaskRun, Metadata, TaskGroup as TaskGroupModel, ProductGroup, pipeline_utils, utils, configure_db
     from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
@@ -56,9 +56,9 @@ class PipelineDB:
     def find_product(self, condition):
         return self.session.query(Product).filter(condition).all()
     
-    def record_task_start(self, taskname, start_dt, pipeline_run_id):
+    def record_task_start(self, taskname, start_dt, pipeline_run_id,**kwargs):
         start_str = tts(dt_to_utc(start_dt))
-        task_record = TaskRun(TaskName=taskname,StartTimeUTC=start_str,PipelineRunID=pipeline_run_id)
+        task_record = TaskRun(TaskName=taskname,StartTimeUTC=start_str,PipelineRunID=pipeline_run_id,**kwargs)
         self.session.add(task_record)
         self.commit()
         return task_record
@@ -93,6 +93,7 @@ class PipelineDB:
     def record_product(self,product:Product):
         self.session.add(product)
         self.commit()
+        return product
     
     def make_or_get_product(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
         existing_product = self.session.query(Product).filter((Product.product_location==product_location) & (Product.data_type==data_type) & (Product.flags==flags) & (Product.data_subtype==data_subtype)).first()
@@ -141,7 +142,7 @@ class Task(ABC):
         # logical expressions that will be applied to all product queries that use self.find_products
         self.filters= filters or {}
 
-    def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:Group|None=None, group_policy:None|str=None) -> int:
+    def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
         """
         Called by :func:`Pipeline.run`. Does important setup, then calls :func:`Task.run()`. Group inputs are set up by TaskGroup.
 
@@ -152,7 +153,7 @@ class Task(ABC):
         """
         self.logfile = logfile
         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
-        self.inputs, self.outdir, self.config = inputs, outdir, config,
+        self.input_group, self.outdir, self.config = input_group, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
         self.group = group
         self.group_policy = group_policy
@@ -203,7 +204,10 @@ class Task(ABC):
         product_location = abspath(product_location)
         product = Product(data_type, self.name, current_dt_utc(), product_location, is_input=0, 
                           producing_pipeline_run_id=self.pipeline_run.ID, producing_task_run_id=self.task_run.ID, flags=flags, data_subtype=data_subtype, **kwargs)
-        self.db.record_product(product)
+        product = self.db.record_product(product)
+        product.ProductGroups.append(self.input_group)
+        self.db.commit()
+        self.db.session.refresh(self.input_group)
         return product
 
     def find_products(self, data_type: str, group_policy:str|None=None, **filters: Mapping[str,Any]) -> List[Product]:
@@ -220,15 +224,15 @@ class Task(ABC):
 
         For example, to find Headers of subtype 'WCS'::
 
-        >> scamp_headers = self.find_products(data_type="Header",data_subtype="WCS")
+        >> headers = self.find_products(data_type="Header",data_subtype="WCS")
 
         Headers of any subtype::
 
-        >> scamp_headers = self.find_products(data_type="Header")
+        >> headers = self.find_products(data_type="Header")
 
         Headers with any non-None subtype::
 
-        >> scamp_headers = self.find_products(data_type="Header",data_subtype="%")
+        >> headers = self.find_products(data_type="Header",data_subtype="%")
         """
 
         if group_policy is None:
@@ -252,7 +256,7 @@ class Task(ABC):
 
         all_related = self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
         if self.group_policy == "avoid_others" and self.group is not None:
-            return [p for p in all_related if not (p.ProducingTask.GroupID and p.ProducingPipeline == self.pipeline_run)]
+            return [p for p in all_related if not (p.ProducingTask.TaskGroupID and p.ProducingPipeline == self.pipeline_run)]
         
         # we end up here if our group is None, our group_policy is ignore, or it's priority and we fell through
         return all_related
@@ -313,20 +317,33 @@ class TaskGroup(Task):
         # logical expressions that will be applied to all product queries that use self.find_products
         self.filters= filters or {}
 
-    def __call__(self, inputs:List[Product], outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:Group|None=None, group_policy:None|str=None) -> int:
+    def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
         self.logfile = logfile
         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
-        self.inputs, self.outdir, self.config = inputs, outdir, config,
+        self.input_group, self.outdir, self.config = input_group, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
         
-        self.group = Group(pipeline_run.ID,self.name)
+        self.task_group_model = TaskGroupModel(pipeline_run.ID,self.name)
         self.group_policy = group_policy
         # a group got passed in, add us as a child
         if group:
-            group.ChildGroups.append(self)
+            group.ChildGroups.append(self.task_group_model)
         else:
-            self.db.add(self.group)
+            self.db.add(self.task_group_model)
         self.db.commit()
+
+        universal = [p for p in input_group if isinstance(p,Product)]   # these are products that are meant to be available to all tasks, regardless of group membership
+        act_on_groups = self.input_group.ChildGroups    # we should run our subtasks in series on each of these groups individually
+
+        sub_groups = []
+        for g in act_on_groups:
+            # expand each of the groups to include the universal products
+            g.Products.extend(universal)
+            self.db.commit()
+            sub_groups.append(g)
+        
+        if not sub_groups:
+            sub_groups = [input_group]
 
         # choose config profile if given
         if self.cfg_profile_name:
@@ -338,18 +355,19 @@ class TaskGroup(Task):
             for k,v in filters_from_cfg.items():
                 self.filters[k] = v
 
-        products = self.find_products(data_type="%")
+        # products = self.find_products(data_type="%")
         
-        products_run = 0
-        for product in products:
+        groups_run = 0
+        for g in sub_groups:
             tasks_run = 0
+            sub_tgm = TaskGroupModel(self.pipeline_run.ID,f"{self.name}_{groups_run}",ParentGroupID=self.task_group_model.ID)
+            self.db.add(sub_tgm)
             for task in self.tasks:
-                group_policy = "previous_only"
-                if not tasks_run:
-                    group_policy = "ignore"
-                    task.filters["ID":product.ID] # limit the task to act only on this ID. will mess with the task grabbing other info :(
-
+                # group_policy = "previous_only"
+                # if not tasks_run:
+                #     group_policy = "ignore"
                 merged_filters = merge_dicts(self.filters, task.filters)
+                task_run = self.db.record_task_start(task.name,current_dt_utc()
             
                 
 
@@ -564,13 +582,13 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_TEST")) 
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
-            outproduct = self.publish_output("test_one","test one output loc",precursors=self.inputs)
+            outproduct = self.publish_output("test_one","test one output loc",precursors=self.input_group)
             fig, (ax1,ax2) = plt.subplots(1,2)
             outproduct.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
             outproduct.visualize_precursors(fig=fig,ax=ax2)
             plt.show()
 
-            self.inputs[0].visualize_precursors()
+            self.input_group[0].visualize_precursors()
             plt.show()
             # raise RuntimeError("I'm going to crash now!")
             return 0
@@ -606,7 +624,7 @@ if __name__ == "__main__":
             task_two_out_1 = self.publish_output("test_two","test_two_1 output loc",precursors=precursors)
             task_two_out_2 = self.publish_output("test_two","test_two_2 output loc",precursors=precursors)
             task_two_1_sub = self.publish_output("test_two","test_two_3 output loc",precursors=[task_two_out_1])
-            self.logger.info(f"Input: \n{str(self.inputs[0])}")
+            self.logger.info(f"Input: \n{str(self.input_group[0])}")
             self.logger.info(f"Task one's product: \n{str(task_one_out)}")
             self.logger.info(f"Task two product 1: \n{str(task_two_out_1)}")
             self.logger.info(f"Task two product 2: \n{str(task_two_out_2)}")
@@ -614,17 +632,17 @@ if __name__ == "__main__":
             self.logger.info(f"All products from this run: {self.find_products('%')}")
             self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
             self.logger.info(f"task_one_out all derivatives: \n{'\n'.join([repr(d) for d in task_one_out.all_derivatives()])}")
-            self.logger.info(f"Inputs[0] all derivatives: \n{'\n'.join([repr(d) for d in self.inputs[0].all_derivatives()])}")
-            self.logger.info(f"Inputs[0] all derivatives only this run: \n{"\n".join([repr(d) for d in self.inputs[0].all_derivatives(pipeline_run=self.pipeline_run)])}")
-            id_traversal = self.inputs[0].traverse_derivatives(lambda s: s.ID,pipeline_run=self.pipeline_run)
+            self.logger.info(f"Inputs[0] all derivatives: \n{'\n'.join([repr(d) for d in self.input_group[0].all_derivatives()])}")
+            self.logger.info(f"Inputs[0] all derivatives only this run: \n{"\n".join([repr(d) for d in self.input_group[0].all_derivatives(pipeline_run=self.pipeline_run)])}")
+            id_traversal = self.input_group[0].traverse_derivatives(lambda s: s.ID,pipeline_run=self.pipeline_run)
             self.logger.info(f"Inputs[0] derivative id traversal: \n{id_traversal}")
-            pipeline_id_traversal = self.inputs[0].traverse_derivatives(lambda s: (s.ID, s.producing_pipeline_run_id),pipeline_run=self.pipeline_run)
+            pipeline_id_traversal = self.input_group[0].traverse_derivatives(lambda s: (s.ID, s.producing_pipeline_run_id),pipeline_run=self.pipeline_run)
             self.logger.info(f"Inputs[0] pipeline id traversal: \n{pipeline_id_traversal}")
 
-            for i in self.inputs:
+            for i in self.input_group:
                 assert self.pipeline_run in i.UsedByRunsAsInput 
 
-            self.inputs[0].visualize_derivatives(self.pipeline_run)
+            self.input_group[0].visualize_derivatives(self.pipeline_run)
             plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
             task_two_1_sub.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)

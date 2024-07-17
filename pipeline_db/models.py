@@ -26,20 +26,27 @@ from utils import dt_to_utc, tts, visualize_graph
 sys.path.remove(parent_dir)
 sys.path.remove(dirname(__file__))
 
-PipelineInputAssociation = None
+# PipelineInputAssociation = None
 
-# mapper_registry.configure()
+# # mapper_registry.configure()
 
-if not PipelineInputAssociation:
-    # table to match observations with obs codes
-    PipelineInputAssociation = Table(
-        'PipelineInputAssociation',
-        pipeline_base.metadata,
-        Column('PipelineRunID', Integer, ForeignKey('PipelineRun.ID'), nullable=False,primary_key=True, index=True),
-        Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
-        # UniqueConstraint('PipelineRunID','ProductID',name="UniqueProducts")
-        extend_existing=True
-    )
+# if not PipelineInputAssociation:
+PipelineInputAssociation = Table(
+    'PipelineInputAssociation',
+    pipeline_base.metadata,
+    Column('PipelineRunID', Integer, ForeignKey('PipelineRun.ID'), nullable=False,primary_key=True, index=True),
+    Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
+    # UniqueConstraint('PipelineRunID','ProductID',name="UniqueProducts")
+    extend_existing=True
+)
+
+ProductProductGroupAssociation = Table(
+    "ProductProductGroupAssociation",
+    pipeline_base.metadata,
+    Column('ProductGroupID', Integer, ForeignKey('ProductGroup.ID'), nullable=False,primary_key=True, index=True),
+    Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
+)
+
 
 class PipelineRun(pipeline_base):
     """ A permanent record that stores information about a past or ongoing Pipeline run.
@@ -102,7 +109,7 @@ class PipelineRun(pipeline_base):
         
         query = dbsession.query(Product).filter(
             (Product.producing_pipeline_run_id == self.ID) &
-            (Product.ProducingTask.GroupID == group_id)
+            (Product.ProducingTask.TaskGroupID == group_id)
         ).order_by(Product.creation_dt.desc())
 
         if filters:
@@ -149,6 +156,7 @@ class Product(pipeline_base):
     producing_pipeline_run_id = Column(Integer, ForeignKey('PipelineRun.ID'), nullable=True)
     task_name = Column(String, nullable=False)
     producing_task_run_id = Column(Integer, ForeignKey('TaskRun.ID'), nullable=True)
+    producing_task_group_id = Column(Integer, ForeignKey('TaskGroup.ID'), nullable=True)
     creation_dt = Column(String, nullable=False)
     product_location = Column(String, nullable=False)
     flags = Column(Integer, nullable=True)
@@ -163,18 +171,31 @@ class Product(pipeline_base):
                                secondary='PrecursorProductAssociation',
                                primaryjoin='Product.ID == PrecursorProductAssociation.PrecursorID',
                                secondaryjoin='Product.ID == PrecursorProductAssociation.ProductID',
-                               overlaps="precursors, products")
+                               overlaps="precursors, products") # this 'overlaps' seems questionable
+    
+    supersessors = relationship('Product',
+                              secondary='SupersessorAssociation',
+                              primaryjoin='Product.ID == SupersessorAssociation.SupersededID',
+                              secondaryjoin='Product.ID == PrecursorProductAssociation.SupersessorID')
+    superseded = relationship("Product",
+                               secondary='SupersessorAssociation',
+                               primaryjoin='Product.ID == SupersessorAssociation.SupersessorID',
+                               secondaryjoin='Product.ID == SupersessorAssociation.SupersededID')
+
     ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
+    ProducingTaskGroup = relationship("TaskGroup",back_populates="ProductsProduced")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
     Metadata: Mapped[List["Metadata"]] = relationship("Metadata")
+    ProductGroups = relationship("ProductGroup",secondary=ProductProductGroupAssociation,back_populates="Products")
 
 
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
-                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
+                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, producing_task_group_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
         date_str = tts(dt_to_utc(creation_dt))
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
-                         task_name=task_name, producing_task_run_id=producing_task_run_id,
+                         task_name=task_name, producing_task_run_id=producing_task_run_id, 
+                         producing_task_group_id = producing_task_group_id,
                          creation_dt=date_str, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
         self._metadata_dict = {m.Key:m.Value for m in self.Metadata}
@@ -358,30 +379,57 @@ class TaskRun(pipeline_base):
     EndTimeUTC = Column(String, nullable=True)
     StatusCodes = Column(Integer, nullable=True)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'))
-    # GroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
+    TaskGroupID = Column(Integer, ForeignKey('TaskGroup.ID'),nullable=True)
 
     Outputs: Mapped[List["Product"]] = relationship("Product", back_populates="ProducingTask")
     Pipeline = relationship("PipelineRun",back_populates="TaskRuns")
-    # Group = relationship("Group",back_populates="Tasks")
+    TaskGroup = relationship("TaskGroup")
 
     def __repr__(self):
         return f"'{self.TaskName}' (run #{self.ID})"
 
-class Group(pipeline_base):
-    __tablename__ = "Group"
+class TaskGroup(pipeline_base):
+    __tablename__ = "TaskGroup"
 
     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    Name = Column(String, nullable=False)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
-    ParentGroupID = Column(Integer, ForeignKey('Group.ID'),nullable=True)
+    Name = Column(String, nullable=False)
+    ParentGroupID = Column(Integer, ForeignKey('TaskGroup.ID'),nullable=True)
     
-    ParentGroup = relationship("Group", back_populates="ChildGroups")
-    ChildGroups: Mapped[List["Group"]] = relationship("Group")
+    ParentGroup = relationship("TaskGroup", back_populates="ChildGroups")
+    ChildGroups: Mapped[List["TaskGroup"]] = relationship("TaskGroup")
+    ProductsProduced = relationship("Product")
 
-    # Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun")
+    Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun",back_populates="TaskGroup")
 
     def __init__(self, PipelineRunID: int, Name: str, ParentGroupID: int | None = None, **kwargs):
+        """A collection of TaskRuns. Specific to a particular pipeline run.
+
+        :param PipelineRunID: the ID of the pipeline run that this TaskGroup ran under
+        :type PipelineRunID: int
+        :param Name: name of the group
+        :type Name: str
+        :param ParentGroupID: ID of a parent task group, if one exists. defaults to None
+        :type ParentGroupID: int | None, optional
+        """
         super().__init__(PipelineRunID=PipelineRunID, Name=Name, ParentGroupID=ParentGroupID, **kwargs)
+
+class ProductGroup(pipeline_base):
+    __tablename__ = "ProductGroup"
+
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
+    ParentGroupID = Column(Integer, ForeignKey('ProductGroup.ID'),nullable=True)
+
+    ParentGroup = relationship("ProductGroup", back_populates="ChildGroups")
+    ChildGroups: Mapped[List["ProductGroup"]] = relationship("ProductGroup")
+
+    Products = relationship("Product",secondary=ProductProductGroupAssociation)
+
+    def __init__(self,PipelineRunID:int, ParentGroupID: int | None = None, **kwargs):
+        super().__init__(PipelineRunID=PipelineRunID, ParentGroupID=ParentGroupID, **kwargs)
+
+
 
 class Metadata(pipeline_base):
     __tablename__ = 'Metadata'
@@ -403,3 +451,16 @@ class PrecursorProductAssociation(pipeline_base):
     
     precursor = relationship('Product', foreign_keys=[PrecursorID], overlaps="derivatives,precursors")
     product = relationship('Product', foreign_keys=[ProductID], overlaps="derivatives,precursors")
+
+
+class SupersessorAssociation(pipeline_base):
+    __tablename__ = 'SupersessorAssociation'
+
+    SupersessorID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+    SupersededID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
+    
+    PipelineRunID = Column(Integer,ForeignKey("PipelineRun.ID"),nullable=False)
+    
+    supersessor = relationship('Product', foreign_keys=[SupersessorID], overlaps="supersessors,supersedes")
+    superseded = relationship('Product', foreign_keys=[SupersededID], overlaps="supersessors,supersedes")
+    Pipeline = relationship('PipelineRunID')
