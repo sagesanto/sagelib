@@ -1,25 +1,32 @@
 import sys, os
-
+args = None
+import argparse
 if __name__ == "__main__":
-    if len(sys.argv)==1:
-        print("Usage: product_info [product filename] {optional}[pipeline_db_path]")
-        exit(1)
+    parser = argparse.ArgumentParser(description='Show summary of pipeline product')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-f','--filepath', action="store", type=str, help="Filepath of the product to inspect")
+    group.add_argument('-i', '--id', action="store", type=int, help="ID of the product to inspect")
+    parser.add_argument('-v','--visualize',action="store_true",default=False)
+    parser.add_argument('-d', '--database', type=str, help='optional path to database to use for lookup.')
+    args = parser.parse_args()
 
 import logging
 sys.path.append(os.path.join(os.path.dirname(__file__),os.path.pardir,os.path.pardir))
-
-from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
-from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
+from sagelib import Product, utils, configure_db
 
 
-
-def product_info(session, filepath, verbose=False):
-    prod = session.query(Product).filter(Product.product_location==filepath).first()
-    if not prod:
-        filepath = os.path.abspath(filepath)
+def product_info(session, filepath:str|None, prod_id:str|None=None):
+    if filepath:
         prod = session.query(Product).filter(Product.product_location==filepath).first()
         if not prod:
-            raise ValueError(f"Couldn't find a product with filepath '{filepath}'")
+            filepath = os.path.abspath(filepath)
+            prod = session.query(Product).filter(Product.product_location==filepath).first()
+            if not prod:
+                raise ValueError(f"Couldn't find a product with filepath '{filepath}'")
+    else:
+        prod = session.query(Product).filter(Product.ID==prod_id).first()
+        if not prod:
+            raise ValueError(f"Couldn't find a product with ID '{prod_id}'")
     
     lines = []
 
@@ -93,23 +100,31 @@ def product_info(session, filepath, verbose=False):
     lines.extend([f"    {key}: {val}" for key,val in producers.items()])
     lines.append('')
 
-    return("\n".join(lines))
+    return("\n".join(lines)), prod
 
 if __name__ == "__main__":
-    filepath = sys.argv[1]
+    filepath = args.filepath
+    prod_id = args.id
+    visualize = args.visualize
+    database_path = args.database
 
-    try:
-        database_path = sys.argv[2]
-    except Exception:
+
+    if not database_path:
         try:
             cfg_path = os.getenv("PIPELINE_DEFAULTS_PATH")
             cfg = utils._read_config(cfg_path)
             database_path = cfg["DB_PATH"]
         except Exception as e:
-            raise ValueError("Either the environment variable 'PIPELINE_DEFAULTS_PATH' must point to a config file containing the key 'DB_PATH' or a database path must be provided as the second argument.") from e 
+            raise ValueError("Either the environment variable 'PIPELINE_DEFAULTS_PATH' must point to a config file containing the key 'DB_PATH' or a database path must be provided with -d.") from e 
 
     logging.basicConfig(level=logging.ERROR)
 
     session, _ = configure_db(database_path)
-
-    print(product_info(session, filepath))
+    info, product = product_info(session, filepath, prod_id)
+    print(info)
+    if visualize:
+        import matplotlib.pyplot as plt
+        fig, (ax1,ax2) = plt.subplots(1,2)
+        product.visualize_precursors(fig=fig,ax=ax1)
+        product.visualize_derivatives(fig=fig,ax=ax2)
+        plt.show()
