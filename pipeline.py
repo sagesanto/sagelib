@@ -4,19 +4,22 @@ from os.path import abspath, join, dirname, exists, basename
 from abc import ABC, abstractmethod
 import logging
 import logging.config
+from datetime import datetime
 from typing import List, Mapping, Any
 from sqlalchemy import inspect, insert, and_, or_
 from sqlalchemy.orm import aliased
 import random, string as stringlib
+import networkx as nx
+import matplotlib.pyplot as plt
 
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
 try:
     from . import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
-    from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
+    from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 except:
     from sagelib import PipelineRun, Product, TaskRun, Metadata, Group, pipeline_utils, utils, configure_db
-    from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc    
+    from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
 
@@ -29,6 +32,7 @@ def mod(path): return join(MODULE_PATH,path)
     # steps of the pipeline should create records of products that point to any precursor frames 
     # i.e. sextractor catalogs each point to a fits file, scamp headers each point to a sextractor product, 
     # products should store product type(s), pipeline run id, precise timestamps, and filepaths    
+
 
 class PipelineDB:
     """test str"""
@@ -43,10 +47,10 @@ class PipelineDB:
     def connect(self):
         self.session, _ = configure_db(self.dbpath)
 
-    def query(self,*args,**kwargs):
+    def query(self,*args,**kwargs:Mapping[str,Any]):
         return self.session.query(*args,**kwargs)
     
-    def add(self,*args,**kwargs):
+    def add(self,*args,**kwargs:Mapping[str,Any]):
         self.session.add(*args,**kwargs)
 
     def find_product(self, condition):
@@ -84,54 +88,34 @@ class PipelineDB:
         pipeline_run.FailedTasks = failed
         pipeline_run.CrashedTasks = crashed
         pipeline_run.Success = success
-        # self.session.add(run) # do i need this?
         self.commit()
     
     def record_product(self,product:Product):
         self.session.add(product)
         self.commit()
+    
+    def make_or_get_product(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
+        existing_product = self.session.query(Product).filter((Product.product_location==product_location) & (Product.data_type==data_type) & (Product.flags==flags) & (Product.data_subtype==data_subtype)).first()
+        if existing_product:
+            return existing_product
+
+        p = Product(data_type, task_name, creation_dt, product_location, is_input=1, flags=flags, data_subtype=data_subtype, **kwargs)
+        self.session.add(p)
+        self.commit()
+        self.session.refresh(p)
+        return p
 
     def record_input_data(self,product:Product,pipeline_run:PipelineRun):
         # create records to indicate what the inputs to a pipeline are, returns product
-        self.logger.info(f"Creating input data for product {product}")
-        existing_product = self.session.query(Product).filter((Product.product_location==product.product_location) & (Product.data_type==product.data_type) & (Product.flags==product.flags) & (Product.data_subtype==product.data_subtype)).first()
-        
-        precursors = []
-        derivatives = []
-        for p in product.precursors:
-            self.logger.info(f"Logging precursor {repr(p)} to product {repr(product)}")
-            precursors.append(self.record_input_data(p,pipeline_run))
-        
-        for d in product.derivatives:
-            self.logger.info(f"Logging derivative {repr(d)} to product {product}")
-            derivatives.append(self.record_input_data(d,pipeline_run))
-        
-        if precursors and derivatives:
-            self.logger.warning("Be careful about creating circular references or database abominations when setting both derivatives and precursors explicitly!")
-
-        if existing_product:
-            self.logger.info(f"Found product {existing_product} ({existing_product.product_location})")
-            # self.logger.warning("Need to link precursors and derivatives when adding input data!!")
-            product = existing_product
-        else:
-            # if this product doesn't already exist in the db, it should be because its new and therefore does not yet have a producing_product_id
-            assert product.producing_pipeline_run_id is None
+        if product.ID is None:
+            raise AttributeError("Input data must be registered to the database by constructing it using Pipeline.product(). Do not construct inputs directly.")
+        if product.producing_pipeline_run_id is None:
             product.producing_pipeline_run_id = pipeline_run.ID
-            product.creation_dt = now_stamp()
-            self.session.add(product)
-            self.logger.info(f"Made product {product} (had not seen it before)")
-
-        for prec in precursors:
-            if prec not in product.precursors:
-                product.precursors.append(prec)
-        for deriv in derivatives:
-            if deriv not in product.derivatives:
-                product.derivatives.append(deriv)
-
+            product.task_name = "INPUT"
         pipeline_run.Inputs.append(product)
         self.session.commit()
-        self.session.expire_all()
-        self.logger.info(f"logged {repr(product)}")
+        self.session.refresh(product)
+        self.logger.info(f"Logged {repr(product)} as input.")
         return product
 
     def close(self):
@@ -268,7 +252,7 @@ class Task(ABC):
 
         all_related = self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
         if self.group_policy == "avoid_others" and self.group is not None:
-            return [p for p in all_related if not (p.ProducingTask.GroupID and p.ProducingTask.PipelineRunID == self.pipeline_run.ID)]
+            return [p for p in all_related if not (p.ProducingTask.GroupID and p.ProducingPipeline == self.pipeline_run)]
         
         # we end up here if our group is None, our group_policy is ignore, or it's priority and we fell through
         return all_related
@@ -372,11 +356,12 @@ class TaskGroup(Task):
 
 
 class Pipeline:
-    def __init__(self, pipeline_name: str, tasks:List[Task], inputs:List[Product], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None):
+    def __init__(self, pipeline_name: str, tasks:List[Task], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None):
         self.name = pipeline_name
         # list of *constructed* task objects, not just classes
         self.tasks = tasks
-        self.inputs = inputs
+        self.inputs = []
+
         # self.inputs = [abspath(f) for f in inputs]
         self.outdir = outdir
         os.makedirs(outdir,exist_ok=True)
@@ -401,8 +386,15 @@ class Pipeline:
         self.pipeline_run = None
         self.success = None
         self.task_runs = []
-        self.validate_pipeline()
     
+    def product(self,data_type: str, task_name: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
+        if "derivatives" in kwargs or "precursors" in kwargs:
+            raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them.")
+        if "is_input" in kwargs:
+            raise ValueError("'is_input' will be set automatically - do not pass it as a keyword argument.")
+        return self.db.make_or_get_product(data_type, task_name, creation_dt, product_location, flags=flags, data_subtype=data_subtype, **kwargs)
+
+
     def validate_pipeline(self):
         # check configuration keys
         missing = {}
@@ -479,7 +471,11 @@ class Pipeline:
             keywords[task] = task.required_params
         return keywords
     
-    def run(self) -> int:
+    def run(self, inputs:List[Product]) -> int:
+        self.inputs = inputs
+        # make a product group of these inputs, pass it to the tasks as they run
+
+        self.validate_pipeline()
         self.succeeded = []
         self.failed = []
         self.crashed = []
@@ -569,6 +565,13 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
             outproduct = self.publish_output("test_one","test one output loc",precursors=self.inputs)
+            fig, (ax1,ax2) = plt.subplots(1,2)
+            outproduct.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
+            outproduct.visualize_precursors(fig=fig,ax=ax2)
+            plt.show()
+
+            self.inputs[0].visualize_precursors()
+            plt.show()
             # raise RuntimeError("I'm going to crash now!")
             return 0
 
@@ -610,10 +613,28 @@ if __name__ == "__main__":
             self.logger.info(f"Task two 1 sub:product: \n{str(task_two_1_sub)}")
             self.logger.info(f"All products from this run: {self.find_products('%')}")
             self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
-            self.logger.info(f"task_one_out all derivatives: {task_one_out.all_derivatives()}")
-            self.logger.info(f"Inputs[0] all derivatives: {self.inputs[0].all_derivatives()}")
-            self.logger.info(f"Inputs[0] all derivatives only this run: {self.inputs[0].all_derivatives(pipeline_run_id=self.pipeline_run.ID)}")
+            self.logger.info(f"task_one_out all derivatives: \n{'\n'.join([repr(d) for d in task_one_out.all_derivatives()])}")
+            self.logger.info(f"Inputs[0] all derivatives: \n{'\n'.join([repr(d) for d in self.inputs[0].all_derivatives()])}")
+            self.logger.info(f"Inputs[0] all derivatives only this run: \n{"\n".join([repr(d) for d in self.inputs[0].all_derivatives(pipeline_run=self.pipeline_run)])}")
+            id_traversal = self.inputs[0].traverse_derivatives(lambda s: s.ID,pipeline_run=self.pipeline_run)
+            self.logger.info(f"Inputs[0] derivative id traversal: \n{id_traversal}")
+            pipeline_id_traversal = self.inputs[0].traverse_derivatives(lambda s: (s.ID, s.producing_pipeline_run_id),pipeline_run=self.pipeline_run)
+            self.logger.info(f"Inputs[0] pipeline id traversal: \n{pipeline_id_traversal}")
 
+            for i in self.inputs:
+                assert self.pipeline_run in i.UsedByRunsAsInput 
+
+            self.inputs[0].visualize_derivatives(self.pipeline_run)
+            plt.show()
+            fig, (ax1,ax2) = plt.subplots(1,2)
+            task_two_1_sub.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
+            task_two_1_sub.visualize_precursors(fig=fig,ax=ax2)
+            plt.show()
+            fig, (ax1,ax2) = plt.subplots(1,2)
+            task_two_1_sub.visualize_derivatives(self.pipeline_run,fig=fig,ax=ax1)
+            task_two_1_sub.visualize_derivatives(fig=fig,ax=ax2)
+            plt.show()
+            # visualize_graph({self.inputs[0].ID:id_traversal},f"Derivatives of Input {self.inputs[0].ID}")
             return 0
         
         @property
@@ -640,27 +661,16 @@ if __name__ == "__main__":
     test_task_one = TestTaskOne("test task one",cfg_profile_name="Test")
     test_task_two = TestTaskTwo("test task two",cfg_profile_name="Test")
 
-    test_input_3 = Product("test_input_3","INPUT", current_dt_utc(),"test_input 3 loc",is_input=1)
+    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],"./test/pipeline","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
 
-    test_input_4 = Product(''.join(random.sample(stringlib.ascii_lowercase,7)),"INPUT", current_dt_utc(),''.join(random.sample(stringlib.ascii_lowercase,7)),is_input=1)
     
-    test_input = Product("test_input","INPUT", current_dt_utc(),"test_input loc",is_input=1, derivatives=[test_input_3,test_input_4])
-    
-    test_input_5 = Product("test_input_5","INPUT", current_dt_utc(),"test_input 5 loc",is_input=1,precursors=[test_input_4]) # putting this in the input list causes everything to blow up for obvious reasons lol
-    
-    test_input_2 = Product("test_input","INPUT", current_dt_utc(),"test_input 2 loc",is_input=1)
+    test_input = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input loc")
+    test_input_2 = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input 2 loc")
+    test_input_3 = pipeline.product("test_input_3","INPUT", current_dt_utc(),"test_input 3 loc")
+    test_input_4 = pipeline.product(''.join(random.sample(stringlib.ascii_lowercase,7)),"INPUT", current_dt_utc(),''.join(random.sample(stringlib.ascii_lowercase,7)))
+    test_input_5 = pipeline.product("test_input_5","INPUT", current_dt_utc(),"test_input 5 loc")
 
-    pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],[test_input, test_input_2],"./test/pipeline","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
-    success = pipeline.run()
-    # insp = inspect(test_input)
-    # print("Session:",insp.session)
-    # print("Info:",insp.dict)
-    # print("deleted:",insp.deleted)
-    # print("detached:",insp.detached)
-    # print("pending:",insp.pending)
-    # print("persistent:",insp.persistent)
-    # print("transient:",insp.transient)
-    # print("unloaded:",insp.unloaded)
-    # pipeline.db.session.refresh(test_input)
-    # print("traversal:")
-    # print(test_input.traverse_derivatives(lambda p: p.product_location))
+    test_input.add_derivatives([test_input_3,test_input_4])
+    test_input_5.add_precursor(test_input_4)
+
+    success = pipeline.run([test_input,test_input_2,test_input_3,test_input_4,test_input_5])

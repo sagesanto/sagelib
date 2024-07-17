@@ -1,10 +1,13 @@
 from __future__ import annotations
-# Sage Santomenna 2023
+# Sage Santomenna 2024
 # models used by sqlalchemy to understand the database
 from typing import List, Callable, Tuple, Union, Any,Mapping
 import sys
 from os.path import abspath, join, dirname, pardir
 from datetime import datetime
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 from sqlalchemy import Column, Integer, String, ForeignKey, Table
 from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session
@@ -18,7 +21,7 @@ parent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(parent_dir)
 
 from pipeline_db.db_config import pipeline_base, mapper_registry
-from utils import dt_to_utc, tts
+from utils import dt_to_utc, tts, visualize_graph
 
 sys.path.remove(parent_dir)
 sys.path.remove(dirname(__file__))
@@ -112,7 +115,7 @@ class PipelineRun(pipeline_base):
         return related_products
 
 class Product(pipeline_base):
-    """Inputs and outputs of Pipelines, represent pipeline products 
+    """Inputs and outputs of Pipelines
     
     Products represent data files that are the inputs or outputs to Pipelines. Products that come from external sources (ex FITS files downloaded from the internet) and not from another PipelineRun are considered 'Inputs' (but they are still of class :class:`Product` - no Input class exists). The :py:attr:`task_name` field of Inputs should be ``INPUT``. The first :class:`PipelineRun` to use a given Input is considered its producing pipeline. During this first run, the Input will be inserted into the :class:`sagelib.pipeline.PipelineDB` and marked with the ID of the :class:`PipelineRun` . 
 
@@ -212,30 +215,53 @@ class Product(pipeline_base):
     def __repr__(self):
         return f"#{self.ID}: {'Input ' if self.is_input else ''}Product of type '{self.data_type+(f'.{self.data_subtype}' if self.data_subtype else '')}' with {len(self.precursors)} precursors and {len(self.derivatives)} derivatives"
     
-    def traverse_derivatives(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],maxdepth:int=-1,**kwargs:Mapping[str,Any]):
+    def add_derivative(self,derivative:Product):
+        if derivative not in self.derivatives:
+            self.derivatives.append(derivative)
+
+    def add_precursor(self,precursor:Product):
+        if precursor not in self.precursors:
+            self.precursors.append(precursor)
+
+    def add_derivatives(self,derivatives:List[Product]):
+        for derivative in derivatives:
+            if derivative not in self.derivatives:
+                self.derivatives.append(derivative)
+
+    def add_precursors(self,precursors:Product):
+        for precursor in precursors:
+            if precursor not in self.precursors:
+                self.precursors.append(precursor)
+
+    def traverse_derivatives(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],pipeline_run:PipelineRun | None=None,maxdepth:int=-1,**kwargs:Mapping[str,Any]):
         """Recursively apply a function to each of the products in the derivative tree of this product, collecting and returning its result
         
-        Does a tree-like walk of derivatives of this product, calling ``func`` on each and collecting the results in a dictionary of {:class:`Product` : returned result}.
+        Does a tree-like walk of derivatives of this product, calling ``func`` on each and collecting the results in a dictionary of 
         
-        :param func: the function to apply to each derivative. must take the derivative as its first argument.
+        :param func: the function to apply to each derivative. must take the derivative as its first argument. RESULT MUST BE HASHABLE
         :param maxdepth: integer. maximum depth to traverse. any negative number runs forever.
         :param *args: additional arguments to pass to ``func``
         :param **kwargs: additional keyword arguments to pass to ``func``
 
         :returns: a dictionary of {result of ``func``: list of results of traverse_derivatives on derivatives}
         """
-        res = []
+        res = {}
         if not self.derivatives or not maxdepth:
-            return func(self)
+            return res
         for d in self.derivatives:
-            res.append(d.traverse_derivatives(func, maxdepth-1,*args,**kwargs))
-        return {func(self):res}
+            if pipeline_run is None or d.ProducingPipeline==pipeline_run:
+                res[func(d,*args)] = d.traverse_derivatives(func, *args, pipeline_run=pipeline_run, maxdepth=maxdepth-1,**kwargs)
+        return res
     
     # what a horrendous mess. why did i do this to myself
-    def all_derivatives(self,pipeline_run_id:int | None=None)-> List[Product]:
+    def all_derivatives(self,pipeline_run:PipelineRun | None=None)-> List[Product]:
         """Traverses tree of derivatives, returning all as a flattened list."""
 
-        deriv_tree = self.traverse_derivatives(lambda s: s)
+        deriv_tree = self.traverse_derivatives(lambda s: s, pipeline_run=pipeline_run)
+        # print("")
+        # print("Deriv tree: ")
+        # print(deriv_tree)
+        # print("")
 
         if not deriv_tree:
             return []
@@ -243,19 +269,83 @@ class Product(pipeline_base):
         def extract_derivs(tree: dict[Product,Any]):
             contents = []
             if isinstance(tree,Product):
-                if not pipeline_run_id or tree.producing_pipeline_run_id==pipeline_run_id:
-                    return [tree]
+                return contents
+                # if not pipeline_run_id or tree.producing_pipeline_run_id==pipeline_run_id:
+                #     return [tree]
             if isinstance(tree,dict):
                 for k, v in tree.items():
-                    if not pipeline_run_id or k.producing_pipeline_run_id==pipeline_run_id or k==self:
                         contents.extend(extract_derivs(v))
                         if k != self:
                             contents.append(k)
-            if isinstance(tree,list):
-                for l in tree:
-                    contents.extend(extract_derivs(l))
+            # if isinstance(tree,list):
+            #     for l in tree:
+            #         contents.extend(extract_derivs(l))
             return contents
-        return extract_derivs(deriv_tree)
+        return list(set(extract_derivs(deriv_tree)))
+    
+    def visualize_derivatives(self, pipeline_run: PipelineRun|None = None, title:str|None=None, fig:Figure|None=None,ax:Axes|None=None) -> Tuple[Figure,Axes]:
+        if title is None:
+            title = f"Derivatives of Product {self.ID}"
+            if pipeline_run is not None:
+                title += f" During Run {pipeline_run.ID}"
+        
+        id_traversal = self.traverse_derivatives(lambda s: s.ID,pipeline_run=pipeline_run)
+        
+        return visualize_graph({self.ID:id_traversal},title,fig,ax)
+    
+
+    def traverse_precursors(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],pipeline_run:PipelineRun|None=None,maxdepth:int=-1,**kwargs:Mapping[str,Any]):
+        """Recursively apply a function to each of the products in the precursor tree of this product, collecting and returning its result
+        
+        Does a tree-like walk of precursors of this product, calling ``func`` on each and collecting the results in a dictionary of 
+        
+        :param func: the function to apply to each precursor. must take the derivative as its first argument. RESULT MUST BE HASHABLE
+        :param *args: additional arguments to pass to ``func``
+        :param pipeline_run: if provided, will only traverse precursors that are products or inputs of this PipelineRun
+        :type pipeline_run: :class:`PipelineRun`
+        :param maxdepth: integer. maximum depth to traverse. any negative number runs forever.
+        :param **kwargs: additional keyword arguments to pass to ``func``
+
+        :returns: a dictionary of {result of ``func``: list of results of traverse_precursors on precursors}
+        """
+        res = {}
+        if not self.precursors or not maxdepth:
+            return res
+        for p in self.precursors:
+            if pipeline_run is None or p.ProducingPipeline==pipeline_run or pipeline_run in p.UsedByRunsAsInput:
+                res[func(p,*args)] = p.traverse_precursors(func, *args, pipeline_run=pipeline_run, maxdepth=maxdepth-1,**kwargs)
+        return res
+    
+    # what a horrendous mess. why did i do this to myself
+    def all_precursors(self,pipeline_run:PipelineRun | None=None)-> List[Product]:
+        """Traverses tree of precursors, returning all as a flattened list."""
+
+        prec_tree = self.traverse_precursors(lambda s: s, pipeline_run=pipeline_run)
+
+        if not prec_tree:
+            return []
+
+        def extract_precursors(tree: dict[Product,Any]):
+            contents = []
+            if isinstance(tree,Product):
+                return contents
+            if isinstance(tree,dict):
+                for k, v in tree.items():
+                        contents.extend(extract_precursors(v))
+                        if k != self:
+                            contents.append(k)
+            return contents
+        return list(set(extract_precursors(prec_tree)))
+    
+    def visualize_precursors(self, pipeline_run: PipelineRun|None = None, title:str|None=None, fig:Figure|None=None,ax:Axes|None=None) -> Tuple[Figure,Axes]:
+        if title is None:
+            title = f"Precursors of Product {self.ID}"
+            if pipeline_run is not None:
+                title += f" (Run {pipeline_run.ID})"
+        
+        id_traversal = self.traverse_precursors(lambda s: s.ID,pipeline_run=pipeline_run)
+        
+        return visualize_graph({self.ID:id_traversal},title,fig,ax)
 
 
 class TaskRun(pipeline_base):

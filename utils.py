@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import pytz
 from pytz import UTC
 from typing import List, Any
+import networkx as nx
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 class Config:
     def __init__(self,filepath:str,default_env_key:str="CONFIG_DEFAULTS"):
@@ -89,6 +93,45 @@ class Config:
 
     def __repr__(self) -> str:
         return f"Config from {self._filepath} with {f'profile {self.selected_profile_name}' if self.selected_profile_name else 'no profile'} selected and {f'defaults loaded from {self._default_path}' if self.has_defaults else ' no defaults loaded'}"
+
+
+def visualize_graph(graph_dict:dict,title:str,fig:Figure|None=None,ax:Axes|None=None) -> tuple[Figure, Axes]:
+    G = nx.DiGraph()
+    if not graph_dict:
+        return fig, ax
+
+    def add_nodes_and_edges(node, edges):
+        G.add_node(node)
+        for edge, sub_edges in edges.items():
+            G.add_edge(node, edge)
+            if sub_edges:
+                add_nodes_and_edges(edge, sub_edges)
+
+    for node, edges in graph_dict.items():
+        add_nodes_and_edges(node, edges)
+
+    center_node = list(graph_dict.keys())[0]
+
+    # Use a spring layout for visualization
+    try:
+        pos = nx.planar_layout(G)
+    except Exception:    
+        pos = nx.kamada_kawai_layout(G)
+        displacement = {node: center_node_position - pos[center_node] for node, center_node_position in pos.items()}
+        for node, position in pos.items():
+            pos[node] = position + displacement[node]
+    colors = ['#71B6F4']*len(pos)
+    colors[0] = '#71F4B0' # make the root node green
+    
+    # Draw nodes and edges
+    if fig is None:
+        fig, ax = plt.subplots()
+    nx.draw(G, pos, with_labels=True, node_size=700, node_color=colors, font_size=10,ax=ax)
+    ax.set_title(title)
+    ax.tick_params(left=False, right=False, labelleft=False,
+                    labelbottom=False, bottom=False)
+    return fig, ax
+
 
 
 def current_dt_utc():
