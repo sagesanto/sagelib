@@ -8,10 +8,8 @@ if __name__ == "__main__":
 import logging
 sys.path.append(os.path.join(os.path.dirname(__file__),os.path.pardir,os.path.pardir))
 
-from sagelib import PipelineRun, Product, TaskRun, pipeline_utils, utils, configure_db
+from sagelib import PipelineRun, utils, configure_db
 from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc
-
-
 
 def run_info(session, run_id, verbose=False):
     run = session.query(PipelineRun).filter(PipelineRun.ID==run_id).first()
