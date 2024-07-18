@@ -271,78 +271,6 @@ class Task(ABC):
 def merge_dicts(d1,d2):
     raise NotImplementedError()
 
-
-# class TaskGroup(Task):
-#     def __init__(self, name:str, tasks:List[Task|TaskGroup], filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
-#         """One step of a pipeline process
-
-#         :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
-#         :type name: str
-#         :param filters: a dictionary of key, value pairs that restricts :class:`Product` searches to only returning those where all of their `key` properties have the value `value` , defaults to None
-#         :type filters: dict[str,str] | None, optional
-#         :param cfg_profile_name: name of a profile to load from the config for the duration of this task's run. options in the profile will override global and default settings, defaults to None
-#         :type cfg_profile_name: str | None, optional
-#         """
-#         self.name = name
-#         self.tasks = tasks
-#         self.outdir = None
-#         self.cfg_profile_name = cfg_profile_name
-#         # logical expressions that will be applied to all product queries that use self.find_products
-#         self.filters= filters or {}
-
-#     def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
-#         self.logfile = logfile
-#         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
-#         self.input_group, self.outdir, self.config = input_group, outdir, config,
-#         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
-        
-#         self.task_group_model = TaskGroupModel(pipeline_run.ID,self.name)
-#         self.group_policy = group_policy
-#         # a group got passed in, add us as a child
-#         if group:
-#             group.ChildGroups.append(self.task_group_model)
-#         else:
-#             self.db.add(self.task_group_model)
-#         self.db.commit()
-
-#         universal = [p for p in input_group if isinstance(p,Product)]   # these are products that are meant to be available to all tasks, regardless of group membership
-#         act_on_groups = self.input_group.ChildGroups    # we should run our subtasks in series on each of these groups individually
-
-#         sub_groups = []
-#         for g in act_on_groups:
-#             # expand each of the groups to include the universal products
-#             g.Products.extend(universal)
-#             self.db.commit()
-#             sub_groups.append(g)
-        
-#         if not sub_groups:
-#             sub_groups = [input_group]
-
-#         # choose config profile if given
-#         if self.cfg_profile_name:
-#             self.config.choose_profile(self.cfg_profile_name)
-
-#         # add filters from config profile, if they exist
-#         filters_from_cfg = self.config.get("filters")
-#         if filters_from_cfg:
-#             for k,v in filters_from_cfg.items():
-#                 self.filters[k] = v
-
-#         # products = self.find_products(data_type="%")
-        
-#         groups_run = 0
-#         for g in sub_groups:
-#             tasks_run = 0
-#             sub_tgm = TaskGroupModel(self.pipeline_run.ID,f"{self.name}_{groups_run}",ParentGroupID=self.task_group_model.ID)
-#             self.db.add(sub_tgm)
-#             for task in self.tasks:
-#                 # group_policy = "previous_only"
-#                 # if not tasks_run:
-#                 #     group_policy = "ignore"
-#                 merged_filters = merge_dicts(self.filters, task.filters)
-#                 task_run = self.db.record_task_start(task.name,current_dt_utc()
-
-
 class Pipeline:
     def __init__(self, pipeline_name: str, tasks:List[Task], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None):
         self.name = pipeline_name
@@ -495,8 +423,13 @@ class Pipeline:
             code = -1
             task_run = self.db.record_task_start(task.name,start_dt,self.pipeline_run.ID)
             self.db.session.expire_all()
+            
+            # TODO: merge filter dicts so task will use its own + the pipeline's (preference given to the task)
+            
             try:
                 self.config.clear_profile()
+                
+                
                 # this is using the task's __call__, not constructing it:
                 code = task(self.input_group, self.outdir, self.config, self.logfile, self.pipeline_run, self.db, task_run)
                 # we need tasks to return integer codes. if this isn't an int, the task was written wrong

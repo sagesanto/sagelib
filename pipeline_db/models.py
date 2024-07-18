@@ -5,7 +5,6 @@ from typing import List, Callable, Tuple, Union, Any,Mapping
 import sys
 from os.path import abspath, join, dirname, pardir
 from datetime import datetime
-import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 

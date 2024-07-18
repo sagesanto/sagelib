@@ -1,9 +1,14 @@
 # Sage Santomenna 2024
-import os, sys
+import sys, os
+
+if __name__ == "__main__":
+    if len(sys.argv)==1:
+        print("Usage: graph_run [run id] {optional}[pipeline_db_path]")
+        exit(1)
+
 from os.path import abspath, join, dirname, pardir
-
 sys.path.append(dirname(__file__))
-
+sys.path.append(os.path.join(os.path.dirname(__file__),os.path.pardir,os.path.pardir))
 
 from sqlalchemy.schema import CreateTable
 from sqlalchemy import text
@@ -11,17 +16,12 @@ from sqlalchemy import text
 parent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(parent_dir)
 
-from pipeline_utils import configure_logger
 
+from sagelib.pipeline_utils import configure_logger
+from sagelib import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
 
 def create_db(dbpath):
-    from db_config import configure_db
-    from models import PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
     logger = configure_logger("DB Creation", join(dirname(dbpath),"db_config.log"))
-    
-    if os.path.exists(dbpath):
-        logger.info(f"Removing existing {dbpath}")
-        os.remove(dbpath)
 
     pipeline_db_session, pipeline_engine = configure_db(dbpath)
 
@@ -68,4 +68,8 @@ def create_db(dbpath):
     return pipeline_db_session, pipeline_engine
 
 if __name__ == "__main__":
-    create_db(sys.argv[1])
+    dbpath = abspath(sys.argv[1])
+    if os.path.exists(dbpath):
+        print(f"Removing existing {dbpath}")
+        os.remove(dbpath)
+    create_db(dbpath)
