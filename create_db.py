@@ -2,8 +2,8 @@
 import sys, os
 
 if __name__ == "__main__":
-    if len(sys.argv)!=2:
-        print("Usage: create_db [db path]")
+    if len(sys.argv)==1:
+        print("Usage: create_db [db path] {--keep}")
         exit(1)
 
 from os.path import abspath, join, dirname, pardir
@@ -72,7 +72,14 @@ def create_db(dbpath):
 
 if __name__ == "__main__":
     dbpath = abspath(sys.argv[1])
-    if os.path.exists(dbpath):
+    keep = False
+    if len(sys.argv) > 2:
+        if sys.argv[2] == "--keep":
+            keep = True
+        else:
+            print("Usage: create_db [db path] {--keep}")
+            exit(1)
+    if os.path.exists(dbpath) and not keep:
         print(f"Removing existing {dbpath}")
         os.remove(dbpath)
     create_db(dbpath)
