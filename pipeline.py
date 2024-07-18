@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
 try:
-    from . import PipelineRun, Product, TaskRun, Metadata, TaskGroup as TaskGroupModel, ProductGroup, pipeline_utils, utils, configure_db
+    from . import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db
     from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 except ImportError:
-    from sagelib import PipelineRun, Product, TaskRun, Metadata, TaskGroup as TaskGroupModel, ProductGroup, pipeline_utils, utils, configure_db
+    from sagelib import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db
     from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
@@ -126,7 +126,7 @@ class PipelineDB:
         self.close()
 
 class Task(ABC):
-    def __init__(self, name:str, filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
+    def __init__(self, name:str, filters:dict[str,str] | None=None, cfg_profile_name:str | None=None, use_superseded=False):
         """One step of a pipeline process
 
         :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
@@ -140,23 +140,20 @@ class Task(ABC):
         self.outdir = None
         self.cfg_profile_name = cfg_profile_name
         # logical expressions that will be applied to all product queries that use self.find_products
+        self.use_superseded = use_superseded
         self.filters= filters or {}
 
-    def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
+    def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun, group_policy:None|str=None) -> int:
         """
         Called by :func:`Pipeline.run`. Does important setup, then calls :func:`Task.run()`. Group inputs are set up by TaskGroup.
 
         :param group: the numerical id of the group this task should belong to. if None, no group association is made
         :type group: int | None, optional
-        :param group_policy: "strict", "priority", "ignore", "previous_only", or None. defaults to None (preferred value). If this Task is part of a group and not the first task in its group to run, how should this query behave? `strict`: only return products produced by tasks in this group and pipelineRun. `priority`: if there are any products from this group in the query results, return only them. otherwise, return all results of the query. `ignore`: completely ignore group membership. `previous_only`: only return products from the most recent TaskRun in the group. useful for iterative pipeline steps that should only act on the most recent version of a product. if None, this is determined automatically.
-        :type group_policy: str | None, optional
         """
         self.logfile = logfile
         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
         self.input_group, self.outdir, self.config = input_group, outdir, config,
         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
-        self.group = group
-        self.group_policy = group_policy
         
         # choose config profile if given
         if self.cfg_profile_name:
@@ -210,9 +207,8 @@ class Task(ABC):
         self.db.session.refresh(self.input_group)
         return product
 
-    def find_products(self, data_type: str, group_policy:str|None=None, **filters: Mapping[str,Any]) -> List[Product]:
+    def find_products(self, data_type: str, **filters: Mapping[str,Any]) -> List[Product]:
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
-
 
         :param data_type: _description_
         :type data_type: str
@@ -235,31 +231,8 @@ class Task(ABC):
         >> headers = self.find_products(data_type="Header",data_subtype="%")
         """
 
-        if group_policy is None:
-            group_policy = self.group_policy
-
-        if self.group is not None:
-            group_products = self.pipeline_run.get_group_products(self.db.session, self.group.ID, data_type=data_type, **self.filters, **filters)
-            # if our policy is strict, return the group result no matter what
-            if self.group_policy == "strict":
-                return group_products
-            # if our policy is priority, return the group result if its not empty
-            elif self.group_policy == "priority" or self.group_policy == "avoid_others":
-                # this will fall through to the outer return (all related products) if group_products is empty
-                if group_products:
-                    return group_products
-            # if our policy is previous_only, return the first item (they're sorted by most recent)
-            elif self.group_policy == "previous_only":
-                if group_products:
-                    return [group_products[0]]
-                return []
-
-        all_related = self.pipeline_run.get_related_products(self.db.session, data_type=data_type, **self.filters, **filters)
-        if self.group_policy == "avoid_others" and self.group is not None:
-            return [p for p in all_related if not (p.ProducingTask.TaskGroupID and p.ProducingPipeline == self.pipeline_run)]
+        return self.pipeline_run.get_related_products(self.db.session, use_superseded=self.use_superseded, data_type=data_type, **self.filters, **filters)
         
-        # we end up here if our group is None, our group_policy is ignore, or it's priority and we fell through
-        return all_related
 
 
     @property
@@ -299,78 +272,75 @@ def merge_dicts(d1,d2):
     raise NotImplementedError()
 
 
-class TaskGroup(Task):
-    def __init__(self, name:str, tasks:List[Task|TaskGroup], filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
-        """One step of a pipeline process
+# class TaskGroup(Task):
+#     def __init__(self, name:str, tasks:List[Task|TaskGroup], filters:dict[str,str] | None=None, cfg_profile_name:str | None=None):
+#         """One step of a pipeline process
 
-        :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
-        :type name: str
-        :param filters: a dictionary of key, value pairs that restricts :class:`Product` searches to only returning those where all of their `key` properties have the value `value` , defaults to None
-        :type filters: dict[str,str] | None, optional
-        :param cfg_profile_name: name of a profile to load from the config for the duration of this task's run. options in the profile will override global and default settings, defaults to None
-        :type cfg_profile_name: str | None, optional
-        """
-        self.name = name
-        self.tasks = tasks
-        self.outdir = None
-        self.cfg_profile_name = cfg_profile_name
-        # logical expressions that will be applied to all product queries that use self.find_products
-        self.filters= filters or {}
+#         :param name: the name of this task. ideally, the name alone gives a fairly good idea of what this task does
+#         :type name: str
+#         :param filters: a dictionary of key, value pairs that restricts :class:`Product` searches to only returning those where all of their `key` properties have the value `value` , defaults to None
+#         :type filters: dict[str,str] | None, optional
+#         :param cfg_profile_name: name of a profile to load from the config for the duration of this task's run. options in the profile will override global and default settings, defaults to None
+#         :type cfg_profile_name: str | None, optional
+#         """
+#         self.name = name
+#         self.tasks = tasks
+#         self.outdir = None
+#         self.cfg_profile_name = cfg_profile_name
+#         # logical expressions that will be applied to all product queries that use self.find_products
+#         self.filters= filters or {}
 
-    def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
-        self.logfile = logfile
-        self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
-        self.input_group, self.outdir, self.config = input_group, outdir, config,
-        self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
+#     def __call__(self, input_group:ProductGroup, outdir:str, config:utils.Config, logfile:str, pipeline_run:PipelineRun, db:PipelineDB, task_run:TaskRun,  group:TaskGroupModel|None=None, group_policy:None|str=None) -> int:
+#         self.logfile = logfile
+#         self.logger = pipeline_utils.configure_logger(self.name, self.logfile)
+#         self.input_group, self.outdir, self.config = input_group, outdir, config,
+#         self.pipeline_run, self.db, self.task_run = pipeline_run, db, task_run
         
-        self.task_group_model = TaskGroupModel(pipeline_run.ID,self.name)
-        self.group_policy = group_policy
-        # a group got passed in, add us as a child
-        if group:
-            group.ChildGroups.append(self.task_group_model)
-        else:
-            self.db.add(self.task_group_model)
-        self.db.commit()
+#         self.task_group_model = TaskGroupModel(pipeline_run.ID,self.name)
+#         self.group_policy = group_policy
+#         # a group got passed in, add us as a child
+#         if group:
+#             group.ChildGroups.append(self.task_group_model)
+#         else:
+#             self.db.add(self.task_group_model)
+#         self.db.commit()
 
-        universal = [p for p in input_group if isinstance(p,Product)]   # these are products that are meant to be available to all tasks, regardless of group membership
-        act_on_groups = self.input_group.ChildGroups    # we should run our subtasks in series on each of these groups individually
+#         universal = [p for p in input_group if isinstance(p,Product)]   # these are products that are meant to be available to all tasks, regardless of group membership
+#         act_on_groups = self.input_group.ChildGroups    # we should run our subtasks in series on each of these groups individually
 
-        sub_groups = []
-        for g in act_on_groups:
-            # expand each of the groups to include the universal products
-            g.Products.extend(universal)
-            self.db.commit()
-            sub_groups.append(g)
+#         sub_groups = []
+#         for g in act_on_groups:
+#             # expand each of the groups to include the universal products
+#             g.Products.extend(universal)
+#             self.db.commit()
+#             sub_groups.append(g)
         
-        if not sub_groups:
-            sub_groups = [input_group]
+#         if not sub_groups:
+#             sub_groups = [input_group]
 
-        # choose config profile if given
-        if self.cfg_profile_name:
-            self.config.choose_profile(self.cfg_profile_name)
+#         # choose config profile if given
+#         if self.cfg_profile_name:
+#             self.config.choose_profile(self.cfg_profile_name)
 
-        # add filters from config profile, if they exist
-        filters_from_cfg = self.config.get("filters")
-        if filters_from_cfg:
-            for k,v in filters_from_cfg.items():
-                self.filters[k] = v
+#         # add filters from config profile, if they exist
+#         filters_from_cfg = self.config.get("filters")
+#         if filters_from_cfg:
+#             for k,v in filters_from_cfg.items():
+#                 self.filters[k] = v
 
-        # products = self.find_products(data_type="%")
+#         # products = self.find_products(data_type="%")
         
-        groups_run = 0
-        for g in sub_groups:
-            tasks_run = 0
-            sub_tgm = TaskGroupModel(self.pipeline_run.ID,f"{self.name}_{groups_run}",ParentGroupID=self.task_group_model.ID)
-            self.db.add(sub_tgm)
-            for task in self.tasks:
-                # group_policy = "previous_only"
-                # if not tasks_run:
-                #     group_policy = "ignore"
-                merged_filters = merge_dicts(self.filters, task.filters)
-                task_run = self.db.record_task_start(task.name,current_dt_utc()
-            
-                
-
+#         groups_run = 0
+#         for g in sub_groups:
+#             tasks_run = 0
+#             sub_tgm = TaskGroupModel(self.pipeline_run.ID,f"{self.name}_{groups_run}",ParentGroupID=self.task_group_model.ID)
+#             self.db.add(sub_tgm)
+#             for task in self.tasks:
+#                 # group_policy = "previous_only"
+#                 # if not tasks_run:
+#                 #     group_policy = "ignore"
+#                 merged_filters = merge_dicts(self.filters, task.filters)
+#                 task_run = self.db.record_task_start(task.name,current_dt_utc()
 
 
 class Pipeline:
@@ -412,7 +382,6 @@ class Pipeline:
             raise ValueError("'is_input' will be set automatically - do not pass it as a keyword argument.")
         return self.db.make_or_get_product(data_type, task_name, creation_dt, product_location, flags=flags, data_subtype=data_subtype, **kwargs)
 
-
     def validate_pipeline(self):
         # check configuration keys
         missing = {}
@@ -443,7 +412,7 @@ class Pipeline:
         # check products produced in pipeline
         missing = {}
         datatypes_supplied = []
-        for p in self.inputs:
+        for p in self.input_group.Products:
             datatypes_supplied.append("*")
             datatypes_supplied.append(p.data_type)
             datatypes_supplied.append(f"{p.data_type}.{p.data_subtype}")
@@ -489,8 +458,11 @@ class Pipeline:
             keywords[task] = task.required_params
         return keywords
     
-    def run(self, inputs:List[Product]) -> int:
-        self.inputs = inputs
+    def run(self, input_group:ProductGroup) -> int:
+        if not isinstance(input_group, ProductGroup):
+            input_group = ProductGroup(Products=input_group)
+            self.db.add(input_group)
+        self.input_group = input_group
         # make a product group of these inputs, pass it to the tasks as they run
 
         self.validate_pipeline()
@@ -509,11 +481,11 @@ class Pipeline:
         pipeline_start = current_dt_utc()
         self.pipeline_run = self.db.record_pipeline_start(self.name,self.version,pipeline_start,self.config,self.logfile)
         # register the inputs. they'll be added to the db if they dont already exist. 
-        self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.inputs]
-        # print("Inputs after registration:")
-        # print([inspect(i).dict for i in self.inputs])
-        # print("Input sessions after registration:")
-        # print([inspect(i).session for i in self.inputs])
+
+        self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.input_group.Products]
+        self.db.session.refresh(self.input_group)
+        print(self.inputs)
+
         self.logger.info(f"Beginning run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
             start_dt = current_dt_utc()
@@ -524,7 +496,7 @@ class Pipeline:
             try:
                 self.config.clear_profile()
                 # this is using the task's __call__, not constructing it:
-                code = task(self.inputs, self.outdir, self.config, self.logfile, self.pipeline_run, self.db, task_run)
+                code = task(self.input_group, self.outdir, self.config, self.logfile, self.pipeline_run, self.db, task_run)
                 # we need tasks to return integer codes. if this isn't an int, the task was written wrong
                 if not isinstance(code, int):
                     raise ValueError(f"Task \'{task.name}\' returned \'{code}\' instead of an integer return code. Tasks must return an integer code (0=success) if they do not crash.")
@@ -582,14 +554,14 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_TEST")) 
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
-            outproduct = self.publish_output("test_one","test one output loc",precursors=self.input_group)
+            outproduct = self.publish_output("test_one","test one output loc",precursors=self.input_group.Products)
             fig, (ax1,ax2) = plt.subplots(1,2)
             outproduct.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
             outproduct.visualize_precursors(fig=fig,ax=ax2)
-            plt.show()
+            # plt.show()
 
-            self.input_group[0].visualize_precursors()
-            plt.show()
+            self.input_group.Products[0].visualize_precursors()
+            # plt.show()
             # raise RuntimeError("I'm going to crash now!")
             return 0
 
@@ -640,18 +612,19 @@ if __name__ == "__main__":
             self.logger.info(f"Inputs[0] pipeline id traversal: \n{pipeline_id_traversal}")
 
             for i in self.input_group:
-                assert self.pipeline_run in i.UsedByRunsAsInput 
+                if i.ProducingPipeline != self.pipeline_run:
+                    assert self.pipeline_run in i.UsedByRunsAsInput 
 
             self.input_group[0].visualize_derivatives(self.pipeline_run)
-            plt.show()
+            # plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
             task_two_1_sub.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
             task_two_1_sub.visualize_precursors(fig=fig,ax=ax2)
-            plt.show()
+            # plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
             task_two_1_sub.visualize_derivatives(self.pipeline_run,fig=fig,ax=ax1)
             task_two_1_sub.visualize_derivatives(fig=fig,ax=ax2)
-            plt.show()
+            # plt.show()
             # visualize_graph({self.inputs[0].ID:id_traversal},f"Derivatives of Input {self.inputs[0].ID}")
             return 0
         
@@ -675,13 +648,13 @@ if __name__ == "__main__":
         def description(self):
             return "A test task"
 
-
     test_task_one = TestTaskOne("test task one",cfg_profile_name="Test")
     test_task_two = TestTaskTwo("test task two",cfg_profile_name="Test")
 
     pipeline = Pipeline("test_pipline",[test_task_one, test_task_two],"./test/pipeline","./test/pipeline/test_config.toml","0.0", default_cfg_path="./test/pipeline/defaults.toml")
 
     
+    # input_group = pipeline.input_group()
     test_input = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input loc")
     test_input_2 = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input 2 loc")
     test_input_3 = pipeline.product("test_input_3","INPUT", current_dt_utc(),"test_input 3 loc")

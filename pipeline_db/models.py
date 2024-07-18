@@ -9,9 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 
-from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, null
 from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session
-
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -55,7 +54,7 @@ class PipelineRun(pipeline_base):
     """
     __tablename__ = 'PipelineRun'
 
-    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True,index=True)
     PipelineName = Column(String, nullable=False)
     StartTimeUTC = Column(String, nullable=False)
     EndTimeUTC = Column(String, nullable=True)
@@ -73,10 +72,10 @@ class PipelineRun(pipeline_base):
     def __repr__(self):
         return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
     
-    def get_related_products(self, dbsession:scoped_session, **filters:Mapping[str,Any]):
+    def get_related_products(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
         """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
         
-        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. 
+        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
 
         :param dbsession: sqlalchemy database session with which to query
         :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
@@ -86,13 +85,17 @@ class PipelineRun(pipeline_base):
         query = dbsession.query(Product).filter(
             (Product.producing_pipeline_run_id == self.ID) | 
             (Product.UsedByRunsAsInput.any(PipelineRun.ID == self.ID))
-        )
+        ).order_by(Product.creation_dt.desc())
         if filters:
             for colname, cond_val in filters.items():
                 col = getattr(Product,colname)
                 if col is None:
                     raise AttributeError(f"Product table has no column {colname}")
                 query = query.filter(col.like(cond_val))
+        if not use_superseded:
+            subq = dbsession.query(SupersessorAssociation).join(Product,SupersessorAssociation.SupersededID==Product.ID).join(PipelineRun,Product.producing_pipeline_run_id==PipelineRun.ID).filter(PipelineRun.ID == self.ID).subquery()
+            query = query.outerjoin(subq,Product.ID==subq.c.SupersededID).filter(subq.c.SupersededID==null())
+
         related_products = query.all()
         return related_products
     
@@ -156,7 +159,6 @@ class Product(pipeline_base):
     producing_pipeline_run_id = Column(Integer, ForeignKey('PipelineRun.ID'), nullable=True)
     task_name = Column(String, nullable=False)
     producing_task_run_id = Column(Integer, ForeignKey('TaskRun.ID'), nullable=True)
-    producing_task_group_id = Column(Integer, ForeignKey('TaskGroup.ID'), nullable=True)
     creation_dt = Column(String, nullable=False)
     product_location = Column(String, nullable=False)
     flags = Column(Integer, nullable=True)
@@ -176,14 +178,16 @@ class Product(pipeline_base):
     supersessors = relationship('Product',
                               secondary='SupersessorAssociation',
                               primaryjoin='Product.ID == SupersessorAssociation.SupersededID',
-                              secondaryjoin='Product.ID == PrecursorProductAssociation.SupersessorID')
+                              secondaryjoin='Product.ID == SupersessorAssociation.SupersessorID',
+                              overlaps="superseded, supersessors")
     superseded = relationship("Product",
                                secondary='SupersessorAssociation',
                                primaryjoin='Product.ID == SupersessorAssociation.SupersessorID',
-                               secondaryjoin='Product.ID == SupersessorAssociation.SupersededID')
+                               secondaryjoin='Product.ID == SupersessorAssociation.SupersededID',
+                               overlaps="supersessors, superseded")
 
     ProducingPipeline = relationship("PipelineRun", back_populates="OutputProducts")
-    ProducingTaskGroup = relationship("TaskGroup",back_populates="ProductsProduced")
+    # ProducingTaskGroup = relationship("TaskGroup",back_populates="ProductsProduced")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
     Metadata: Mapped[List["Metadata"]] = relationship("Metadata")
@@ -191,11 +195,10 @@ class Product(pipeline_base):
 
 
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
-                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, producing_task_group_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
+                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
         date_str = tts(dt_to_utc(creation_dt))
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id, 
-                         producing_task_group_id = producing_task_group_id,
                          creation_dt=date_str, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
         self._metadata_dict = {m.Key:m.Value for m in self.Metadata}
@@ -379,56 +382,34 @@ class TaskRun(pipeline_base):
     EndTimeUTC = Column(String, nullable=True)
     StatusCodes = Column(Integer, nullable=True)
     PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'))
-    TaskGroupID = Column(Integer, ForeignKey('TaskGroup.ID'),nullable=True)
+    # TaskGroupID = Column(Integer, ForeignKey('TaskGroup.ID'),nullable=True)
 
     Outputs: Mapped[List["Product"]] = relationship("Product", back_populates="ProducingTask")
     Pipeline = relationship("PipelineRun",back_populates="TaskRuns")
-    TaskGroup = relationship("TaskGroup")
+    # TaskGroup = relationship("TaskGroup")
 
     def __repr__(self):
         return f"'{self.TaskName}' (run #{self.ID})"
-
-class TaskGroup(pipeline_base):
-    __tablename__ = "TaskGroup"
-
-    ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
-    Name = Column(String, nullable=False)
-    ParentGroupID = Column(Integer, ForeignKey('TaskGroup.ID'),nullable=True)
     
-    ParentGroup = relationship("TaskGroup", back_populates="ChildGroups")
-    ChildGroups: Mapped[List["TaskGroup"]] = relationship("TaskGroup")
-    ProductsProduced = relationship("Product")
-
-    Tasks: Mapped[List["TaskRun"]] = relationship("TaskRun",back_populates="TaskGroup")
-
-    def __init__(self, PipelineRunID: int, Name: str, ParentGroupID: int | None = None, **kwargs):
-        """A collection of TaskRuns. Specific to a particular pipeline run.
-
-        :param PipelineRunID: the ID of the pipeline run that this TaskGroup ran under
-        :type PipelineRunID: int
-        :param Name: name of the group
-        :type Name: str
-        :param ParentGroupID: ID of a parent task group, if one exists. defaults to None
-        :type ParentGroupID: int | None, optional
-        """
-        super().__init__(PipelineRunID=PipelineRunID, Name=Name, ParentGroupID=ParentGroupID, **kwargs)
 
 class ProductGroup(pipeline_base):
     __tablename__ = "ProductGroup"
 
     ID: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=False)
+    PipelineRunID = Column(Integer, ForeignKey('PipelineRun.ID'),nullable=True)
     ParentGroupID = Column(Integer, ForeignKey('ProductGroup.ID'),nullable=True)
 
     ParentGroup = relationship("ProductGroup", back_populates="ChildGroups")
     ChildGroups: Mapped[List["ProductGroup"]] = relationship("ProductGroup")
 
     Products = relationship("Product",secondary=ProductProductGroupAssociation)
+    Pipeline = relationship("PipelineRun")
 
-    def __init__(self,PipelineRunID:int, ParentGroupID: int | None = None, **kwargs):
+    def __init__(self,PipelineRunID:int|None = None, ParentGroupID: int | None = None, **kwargs):
         super().__init__(PipelineRunID=PipelineRunID, ParentGroupID=ParentGroupID, **kwargs)
 
+    def __getitem__(self,index):
+        return self.Products[index]
 
 
 class Metadata(pipeline_base):
@@ -458,9 +439,6 @@ class SupersessorAssociation(pipeline_base):
 
     SupersessorID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
     SupersededID = Column(Integer, ForeignKey('Product.ID'), primary_key=True)
-    
-    PipelineRunID = Column(Integer,ForeignKey("PipelineRun.ID"),nullable=False)
-    
-    supersessor = relationship('Product', foreign_keys=[SupersessorID], overlaps="supersessors,supersedes")
+        
+    supersessor = relationship('Product', foreign_keys=[SupersessorID], overlaps="supersessors,supersedes,superseded")
     superseded = relationship('Product', foreign_keys=[SupersededID], overlaps="supersessors,supersedes")
-    Pipeline = relationship('PipelineRunID')
