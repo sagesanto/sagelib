@@ -2,8 +2,8 @@
 import sys, os
 
 if __name__ == "__main__":
-    if len(sys.argv)==1:
-        print("Usage: graph_run [run id] {optional}[pipeline_db_path]")
+    if len(sys.argv)!=2:
+        print("Usage: create_db [db path]")
         exit(1)
 
 from os.path import abspath, join, dirname, pardir
@@ -16,9 +16,12 @@ from sqlalchemy import text
 parent_dir = abspath(join(dirname(__file__), pardir))
 sys.path.append(parent_dir)
 
-
-from sagelib.pipeline_utils import configure_logger
-from sagelib import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
+try:
+    from pipeline_utils import configure_logger
+    from . import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
+except ImportError:
+    from sagelib.pipeline_utils import configure_logger
+    from sagelib import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
 
 def create_db(dbpath):
     logger = configure_logger("DB Creation", join(dirname(dbpath),"db_config.log"))
