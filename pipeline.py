@@ -354,12 +354,14 @@ class Pipeline:
         self.outdir = outdir
         os.makedirs(outdir,exist_ok=True)
         # self.profile_name = profile_name
+        config_path = abspath(config_path)
         self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH")
         # self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = abspath(join(outdir,f"{self.name}.log"))
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
         # db can ONLY be set in the default cfg
         if default_cfg_path:
+            default_cfg_path = abspath(default_cfg_path)
             self.config.load_defaults(default_cfg_path)
         self.dbpath = self.config._get_default("DB_PATH")
         print(self.dbpath)
@@ -545,6 +547,8 @@ if __name__ == "__main__":
         from dotenv import load_dotenv
         load_dotenv(r"pipeline_db\.env")
 
+    endl = "\n"
+
     class TestTaskOne(Task):
         def run(self):
             self.logger.info("hi")
@@ -596,20 +600,22 @@ if __name__ == "__main__":
             task_two_out_1 = self.publish_output("test_two","test_two_1 output loc",precursors=precursors)
             task_two_out_2 = self.publish_output("test_two","test_two_2 output loc",precursors=precursors)
             task_two_1_sub = self.publish_output("test_two","test_two_3 output loc",precursors=[task_two_out_1])
-            self.logger.info(f"Input: \n{str(self.input_group[0])}")
-            self.logger.info(f"Task one's product: \n{str(task_one_out)}")
-            self.logger.info(f"Task two product 1: \n{str(task_two_out_1)}")
-            self.logger.info(f"Task two product 2: \n{str(task_two_out_2)}")
-            self.logger.info(f"Task two 1 sub:product: \n{str(task_two_1_sub)}")
+            self.logger.info(f"Input: {endl}{str(self.input_group[0])}")
+            self.logger.info(f"Task one's product: {endl}{str(task_one_out)}")
+            self.logger.info(f"Task two product 1: {endl}{str(task_two_out_1)}")
+            self.logger.info(f"Task two product 2: {endl}{str(task_two_out_2)}")
+            self.logger.info(f"Task two 1 sub:product: {endl}{str(task_two_1_sub)}")
             self.logger.info(f"All products from this run: {self.find_products('%')}")
             self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
-            self.logger.info(f"task_one_out all derivatives: \n{'\n'.join([repr(d) for d in task_one_out.all_derivatives()])}")
-            self.logger.info(f"Inputs[0] all derivatives: \n{'\n'.join([repr(d) for d in self.input_group[0].all_derivatives()])}")
-            self.logger.info(f"Inputs[0] all derivatives only this run: \n{"\n".join([repr(d) for d in self.input_group[0].all_derivatives(pipeline_run=self.pipeline_run)])}")
+            self.logger.info(f"task_one_out all derivatives: {endl}{f'{endl}'.join([repr(d) for d in task_one_out.all_derivatives()])}")
+            self.logger.info(f"Inputs[0] all derivatives: {endl}{f'{endl}'.join([repr(d) for d in self.input_group[0].all_derivatives()])}")
+            self.logger.info("Inputs[0] all derivatives only this run:")
+            all_derivs = '\n'.join([repr(d) for d in self.input_group[0].all_derivatives(pipeline_run=self.pipeline_run)])
+            self.logger.info(f"{all_derivs}")
             id_traversal = self.input_group[0].traverse_derivatives(lambda s: s.ID,pipeline_run=self.pipeline_run)
-            self.logger.info(f"Inputs[0] derivative id traversal: \n{id_traversal}")
+            self.logger.info(f"Inputs[0] derivative id traversal: {endl}{id_traversal}")
             pipeline_id_traversal = self.input_group[0].traverse_derivatives(lambda s: (s.ID, s.producing_pipeline_run_id),pipeline_run=self.pipeline_run)
-            self.logger.info(f"Inputs[0] pipeline id traversal: \n{pipeline_id_traversal}")
+            self.logger.info(f"Inputs[0] pipeline id traversal: {endl}{pipeline_id_traversal}")
 
             for i in self.input_group:
                 if i.ProducingPipeline != self.pipeline_run:
