@@ -71,10 +71,10 @@ class PipelineRun(pipeline_base):
     def __repr__(self):
         return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
     
-    def get_related_products(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
-        """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
+    def related_product_query(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
+        """Return a Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
         
-        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
+        This Query can be executed using :func:`PipelineRun.run_query` to find the pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
 
         :param dbsession: sqlalchemy database session with which to query
         :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
@@ -94,7 +94,20 @@ class PipelineRun(pipeline_base):
         if not use_superseded:
             subq = dbsession.query(SupersessorAssociation).join(Product,SupersessorAssociation.SupersededID==Product.ID).join(PipelineRun,Product.producing_pipeline_run_id==PipelineRun.ID).filter(PipelineRun.ID == self.ID).subquery()
             query = query.outerjoin(subq,Product.ID==subq.c.SupersededID).filter(subq.c.SupersededID==null())
+        
+        return query
 
+    def get_related_products(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
+        """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
+        
+        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
+
+        :param dbsession: sqlalchemy database session with which to query
+        :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
+
+        :returns: list of products 
+        """
+        query = self.related_product_query(dbsession,use_superseded,**filters)
         related_products = query.all()
         return related_products
     

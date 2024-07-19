@@ -39,7 +39,7 @@ class PipelineDB:
     def __init__(self, dbpath, logger):
         self.logger = logger
         if not exists(dbpath):
-            raise FileNotFoundError(f"Sagelib: No database found at {dbpath}. Try running 'pipeline_db/create_db.py' with a path to create one, or check that this path is correct.")
+            raise FileNotFoundError(f"Sagelib: No database found at {dbpath}. Try running 'python -m sagelib.create_db [out filepath]' to create one, or check that this path is correct.")
         self.dbpath = dbpath
 
         self.connect()
@@ -207,12 +207,21 @@ class Task(ABC):
         self.db.session.refresh(self.input_group)
         return product
 
+    def product_query(self, data_type: str, **filters: Mapping[str,Any]):
+        """ Returns a query for products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator. The query can be run with :func:`Task.run_query()` 
+        :param data_type: _description_
+        :type data_type: str
+        :type group_policy: str, optional
+        :return: _description_
+        :rtype: List[Product]
+        """
+        return self.pipeline_run.related_product_query(self.db.session, use_superseded=self.use_superseded, data_type=data_type, **filters)
+
     def find_products(self, data_type: str, **filters: Mapping[str,Any]) -> List[Product]:
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
 
         :param data_type: _description_
         :type data_type: str
-        :param group_policy: "strict", "priority", "ignore", "previous_only", or None. defaults to None. If this Task is part of a group and not the first task in its group to run, how should this query behave? `strict`: only return products produced by tasks in this group and pipelineRun. `priority`: if there are any products from this group in the query results, return only them. otherwise, return all results of the query. `ignore`: completely ignore group membership. `previous_only`: only return products from the most recent TaskRun in the group. useful for iterative pipeline steps that should only act on the most recent version of a product. if None, uses the Task's group_policy.
         :type group_policy: str, optional
         :return: _description_
         :rtype: List[Product]
@@ -231,9 +240,11 @@ class Task(ABC):
         >> headers = self.find_products(data_type="Header",data_subtype="%")
         """
 
-        return self.pipeline_run.get_related_products(self.db.session, use_superseded=self.use_superseded, data_type=data_type, **self.filters, **filters)
+        return self.run_product_query(self.product_query(data_type=data_type, **self.filters, **filters))
         
 
+    def run_product_query(self,query):
+        return query.all()
 
     @property
     @abstractmethod
