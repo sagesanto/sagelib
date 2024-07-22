@@ -343,9 +343,17 @@ class Pipeline:
     def add_derivative(self,product:Product,derivative:Product):
         product.derivatives.append(derivative)
         self.db.commit()
+    
+    def add_derivatives(self,product:Product,derivatives:List[Product]):
+        product.derivatives.extend(derivatives)
+        self.db.commit()
 
     def add_precursor(self,product:Product,precursor:Product):
         product.precursor.append(precursor)
+        self.db.commit()
+
+    def add_precursors(self,product:Product,precursors:List[Product]):
+        product.precursor.extend(precursors)
         self.db.commit()
 
     def validate_pipeline(self):
