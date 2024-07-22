@@ -209,6 +209,7 @@ class Product(pipeline_base):
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
                  producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
         date_str = tts(dt_to_utc(creation_dt))
+        product_location = abspath(product_location)
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id, 
                          creation_dt=date_str, product_location=product_location,

@@ -338,6 +338,7 @@ class Pipeline:
             raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them with :func:`Pipeline.add_derivative` or :func:`Pipeline.add_precursor`.")
         if "is_input" in kwargs:
             raise ValueError("'is_input' will be set automatically - do not pass it as a keyword argument.")
+        product_location = abspath(product_location)
         return self.db.make_or_get_product(data_type, task_name, creation_dt, product_location, flags=flags, data_subtype=data_subtype, **kwargs)
     
     def add_derivative(self,product:Product,derivative:Product):
