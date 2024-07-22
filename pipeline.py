@@ -335,10 +335,18 @@ class Pipeline:
     def product(self,data_type: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
         task_name = kwargs.get("task_name","INPUT")  # assume that it's an input. our db will take care of it if it isn't.
         if "derivatives" in kwargs or "precursors" in kwargs:
-            raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them.")
+            raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them with :func:`Pipeline.add_derivative` or :func:`Pipeline.add_precursor`.")
         if "is_input" in kwargs:
             raise ValueError("'is_input' will be set automatically - do not pass it as a keyword argument.")
         return self.db.make_or_get_product(data_type, task_name, creation_dt, product_location, flags=flags, data_subtype=data_subtype, **kwargs)
+    
+    def add_derivative(self,product:Product,derivative:Product):
+        product.derivatives.append(derivative)
+        self.db.commit()
+
+    def add_precursor(self,product:Product,precursor:Product):
+        product.precursor.append(precursor)
+        self.db.commit()
 
     def validate_pipeline(self):
         # check configuration keys
@@ -408,7 +416,6 @@ class Pipeline:
             self.logger.warning(f"It looks like task '{task.name}' (#{taskrun.ID}) failed to set the following config keys despite promising to do so: {missing_keys}. This is probably a programming error. The pipeline run will continue, but this could cause serious problems.")
         if missing_product_types:
             self.logger.warning(f"It looks like task '{task.name}' (#{taskrun.ID}) failed to produce data products of the following types, despite promising to do so: {missing_product_types}. This is probably a programming error. The pipeline run will continue, but this could cause serious problems.")
-        
 
     def get_required_keys(self) -> dict[Task,str]:
         keywords = {}
