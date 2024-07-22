@@ -207,7 +207,7 @@ class Product(pipeline_base):
 
 
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
-                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs):
+                 producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
         date_str = tts(dt_to_utc(creation_dt))
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id, 
@@ -382,6 +382,16 @@ class Product(pipeline_base):
         id_traversal = self.traverse_precursors(lambda s: s.ID,pipeline_run=pipeline_run)
         
         return visualize_graph({self.ID:id_traversal},title,fig,ax)
+    
+    def add_metadata(self,task_id:int,**kwargs:Mapping[str,str]):
+        """Add key, value pairs to a product as Metadata. **Does not commit to the database - you must do that after running this!**
+
+        :param task_id: the ID of the task adding the metadata
+        :type task_id: int
+        """
+        for k,v in kwargs.items():
+            meta = Metadata(self.ID,str(k),str(v),task_id)
+            self.Metadata.append(meta)
 
 
 class TaskRun(pipeline_base):
@@ -417,7 +427,7 @@ class ProductGroup(pipeline_base):
     Products = relationship("Product",secondary=ProductProductGroupAssociation)
     Pipeline = relationship("PipelineRun")
 
-    def __init__(self,PipelineRunID:int|None = None, ParentGroupID: int | None = None, **kwargs):
+    def __init__(self,PipelineRunID:int|None = None, ParentGroupID: int | None = None, **kwargs:Mapping[str,Any]):
         super().__init__(PipelineRunID=PipelineRunID, ParentGroupID=ParentGroupID, **kwargs)
 
     def __getitem__(self,index):
@@ -434,6 +444,10 @@ class Metadata(pipeline_base):
     Value = Column(String, nullable=False)
 
     Product = relationship("Product",back_populates="Metadata")
+
+    def __init__(self,ProductID:int,Key:str,Value:str,TaskID:int|None=None):
+        super().__init__(ProductID=ProductID,TaskID=TaskID,Key=Key,Value=Value)
+
 
 
 class PrecursorProductAssociation(pipeline_base):

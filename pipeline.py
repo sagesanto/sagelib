@@ -7,7 +7,7 @@ import logging.config
 from datetime import datetime
 from typing import List, Mapping, Any
 from sqlalchemy import inspect, insert, and_, or_
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, Query
 import random, string as stringlib
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -53,8 +53,15 @@ class PipelineDB:
     def add(self,*args,**kwargs:Mapping[str,Any]):
         self.session.add(*args,**kwargs)
 
-    def find_product(self, condition):
-        return self.session.query(Product).filter(condition).all()
+    def find_product(self, **filters):
+        query = self.session.query(Product).order_by(Product.creation_dt.desc())
+        if filters:
+            for colname, cond_val in filters.items():
+                col = getattr(Product,colname)
+                if col is None:
+                    raise AttributeError(f"Product table has no column {colname}")
+                query = query.filter(col.like(cond_val))
+        return query
     
     def record_task_start(self, taskname, start_dt, pipeline_run_id,**kwargs):
         start_str = tts(dt_to_utc(start_dt))
@@ -243,8 +250,17 @@ class Task(ABC):
         return self.run_product_query(self.product_query(data_type=data_type, **self.filters, **filters))
         
 
-    def run_product_query(self,query):
+    def run_product_query(self,query:Query):
         return query.all()
+    
+    def add_metadata(self,product:Product,**kwargs:Mapping[str,str]):
+        """Add key, value pairs (strings!) to a product as Metadata. Commits to the database.
+
+        :param product: the product to attach metadata to
+        :type product: Product
+        """
+        product.add_metadata(self.task_run.ID,**kwargs)
+        self.db.commit()
 
     @property
     @abstractmethod
@@ -316,7 +332,8 @@ class Pipeline:
         self.success = None
         self.task_runs = []
     
-    def product(self,data_type: str, task_name: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
+    def product(self,data_type: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
+        task_name = kwargs.get("task_name","INPUT")  # assume that it's an input. our db will take care of it if it isn't.
         if "derivatives" in kwargs or "precursors" in kwargs:
             raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them.")
         if "is_input" in kwargs:
@@ -399,11 +416,14 @@ class Pipeline:
             keywords[task] = task.required_params
         return keywords
     
-    def run(self, input_group:ProductGroup) -> int:
-        if not isinstance(input_group, ProductGroup):
-            input_group = ProductGroup(Products=input_group)
-            self.db.add(input_group)
-        self.input_group = input_group
+    def run(self, input:ProductGroup|List[Product|ProductGroup]) -> int:
+        if not isinstance(input, ProductGroup):
+            ps = [p for p in input if isinstance(p,Product)]
+            pgs = [pg for pg in input if isinstance(pg,ProductGroup)]
+            input = ProductGroup(Products=input)
+            input.ChildGroups = pgs
+            self.db.add(input)
+        self.input_group = input
         # make a product group of these inputs, pass it to the tasks as they run
 
         self.validate_pipeline()
