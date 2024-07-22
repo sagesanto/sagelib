@@ -106,7 +106,7 @@ class PipelineDB:
         existing_product = self.session.query(Product).filter((Product.product_location==product_location) & (Product.data_type==data_type) & (Product.flags==flags) & (Product.data_subtype==data_subtype)).first()
         if existing_product:
             return existing_product
-
+    
         p = Product(data_type, task_name, creation_dt, product_location, is_input=1, flags=flags, data_subtype=data_subtype, **kwargs)
         self.session.add(p)
         self.commit()
@@ -333,7 +333,11 @@ class Pipeline:
         self.task_runs = []
     
     def product(self,data_type: str, creation_dt:datetime, product_location:str, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
-        task_name = kwargs.get("task_name","INPUT")  # assume that it's an input. our db will take care of it if it isn't.
+        task_name = kwargs.get("task_name")
+        if task_name: 
+            del kwargs["task_name"]  # assume that it's an input. our db will take care of it if it isn't.
+        else:
+            task_name = "INPUT"
         if "derivatives" in kwargs or "precursors" in kwargs:
             raise ValueError("When initializing products with Pipeline.product, do not pass derivatives or precursors. Construct those on their own as well, then associate them with :func:`Pipeline.add_derivative` or :func:`Pipeline.add_precursor`.")
         if "is_input" in kwargs:
