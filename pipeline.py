@@ -306,13 +306,13 @@ class Pipeline:
         self.inputs = []
 
         # self.inputs = [abspath(f) for f in inputs]
-        self.outdir = outdir
-        os.makedirs(outdir,exist_ok=True)
+        self.outdir = abspath(outdir)
+        os.makedirs(self.outdir,exist_ok=True)
         # self.profile_name = profile_name
         config_path = abspath(config_path)
         self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH")
         # self.config.choose_profile(profile_name) # this is the scoped config in the file
-        self.logfile = abspath(join(outdir,f"{self.name}.log"))
+        self.logfile = join(self.outdir,f"{self.name}.log")
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
         # db can ONLY be set in the default cfg
         if default_cfg_path:
