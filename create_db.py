@@ -18,10 +18,10 @@ sys.path.append(parent_dir)
 
 try:
     from pipeline_utils import configure_logger
-    from . import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
+    from . import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup, ProductMetadataAssociation
 except ImportError:
     from sagelib.pipeline_utils import configure_logger
-    from sagelib import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup
+    from sagelib import configure_db, PipelineInputAssociation, PrecursorProductAssociation, ProductProductGroupAssociation, SupersessorAssociation, PipelineRun, Product, TaskRun, Metadata, ProductGroup, ProductMetadataAssociation
 
 def create_db(dbpath):
     logger = configure_logger("DB Creation", join(dirname(dbpath),"db_config.log"))
@@ -58,6 +58,9 @@ def create_db(dbpath):
     p_group_association_stmt = CreateTable(ProductProductGroupAssociation, if_not_exists=True).compile(pipeline_engine)
     pipeline_db_session.execute(text(str(p_group_association_stmt)))
     logger.info("Configured Product-ProductGroup Association Table")
+    p_metadata_association_stmt = CreateTable(ProductMetadataAssociation, if_not_exists=True).compile(pipeline_engine)
+    pipeline_db_session.execute(text(str(p_metadata_association_stmt)))
+    logger.info("Configured Product-Metadata Association Table")
 
 
     pipeline_db_session.commit()
@@ -72,11 +75,9 @@ def create_db(dbpath):
 
 if __name__ == "__main__":
     dbpath = abspath(sys.argv[1])
-    keep = False
+    keep = "--keep" in sys.argv
     if len(sys.argv) > 2:
-        if sys.argv[2] == "--keep":
-            keep = True
-        else:
+        if not keep:
             print("Usage: create_db [db path] {--keep}")
             exit(1)
     if os.path.exists(dbpath) and not keep:

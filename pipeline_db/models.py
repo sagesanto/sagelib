@@ -45,6 +45,14 @@ ProductProductGroupAssociation = Table(
     Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True),
 )
 
+ProductMetadataAssociation = Table(
+    "ProductMetadataAssociation",
+    pipeline_base.metadata,
+    Column('ProductID', Integer, ForeignKey('Product.ID'), nullable=False,primary_key=True, index=True),
+    Column('MetadataID', Integer, ForeignKey('Metadata.ID'), nullable=False,primary_key=True),
+)
+
+
 
 class PipelineRun(pipeline_base):
     """ A permanent record that stores information about a past or ongoing Pipeline run.
@@ -202,20 +210,35 @@ class Product(pipeline_base):
     # ProducingTaskGroup = relationship("TaskGroup",back_populates="ProductsProduced")
     UsedByRunsAsInput: Mapped[List["PipelineRun"]] = relationship("PipelineRun", secondary='PipelineInputAssociation', back_populates="Inputs")
     ProducingTask = relationship("TaskRun", back_populates="Outputs")
-    Metadata: Mapped[List["Metadata"]] = relationship("Metadata")
     ProductGroups = relationship("ProductGroup",secondary=ProductProductGroupAssociation,back_populates="Products")
+    Metadata: Mapped[List["Metadata"]] = relationship("Metadata",secondary=ProductMetadataAssociation,back_populates="Products")
+    # Metadata: Mapped[List["Metadata"]] = relationship("Metadata")
+
 
 
     def __init__(self, data_type: str, task_name: str, creation_dt:datetime, product_location:str, is_input:int, 
                  producing_pipeline_run_id:int | None=None, producing_task_run_id:int | None=None, flags:int | None=None, data_subtype: str | None=None, **kwargs:Mapping[str,Any]):
         date_str = tts(dt_to_utc(creation_dt))
         product_location = abspath(product_location)
+        precs = []
+        if "precursors" in kwargs:
+            precs = kwargs.pop("precursors")
+        
+        derivs = []
+        if "derivatives" in kwargs:
+            precs = kwargs.pop("derivatives")
+
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id, 
                          creation_dt=date_str, product_location=product_location,
                          flags=flags, is_input=is_input, data_subtype=data_subtype, **kwargs)
-        self._metadata_dict = {m.Key:m.Value for m in self.Metadata}
-    
+        
+        if precs:
+            self.add_precursors(precs)
+        
+        if derivs:
+            self.add_derivatives(derivs)
+
     def __getitem__(self, index:str) -> str:
         """Retrieve product metadata with key 'index'
 
@@ -229,6 +252,9 @@ class Product(pipeline_base):
         except KeyError as e:
             raise KeyError(f"Product {repr(self)} has no metadata record with key '{index}'") from e
     
+    def _mdkeys(self):
+        return list(self.metadata_dict().keys())
+
     def getmd(self,key:str,default_val:str) -> str:
         """Retrieve product metadata with key 'key'. If no such metadata exists, return default_val instead.
 
@@ -237,7 +263,7 @@ class Product(pipeline_base):
         :return: the value stored in the metadata record, if found, or default_val
         :rtype: str
         """
-        return self._metadata_dict.get(key,default_val)
+        return self.metadata_dict().get(key,default_val)
 
 
     def __str__(self):
@@ -255,10 +281,20 @@ class Product(pipeline_base):
     def add_derivative(self,derivative:Product):
         if derivative not in self.derivatives:
             self.derivatives.append(derivative)
+            mdkeys = derivative._mdkeys()
+            for m in self.Metadata:
+                if m.Key not in mdkeys:
+                    derivative.Metadata.append(m)
+                    mdkeys.append(m.Key)
 
     def add_precursor(self,precursor:Product):
         if precursor not in self.precursors:
             self.precursors.append(precursor)
+            mdkeys = self._mdkeys()
+            for m in precursor.Metadata:
+                if m.Key not in mdkeys:
+                    self.Metadata.append(m)
+                    mdkeys.append(m.Key)
 
     def add_derivatives(self,derivatives:List[Product]):
         for derivative in derivatives:
@@ -393,6 +429,9 @@ class Product(pipeline_base):
         for k,v in kwargs.items():
             meta = Metadata(self.ID,str(k),str(v),task_id)
             self.Metadata.append(meta)
+        
+    def metadata_dict(self):
+        return {m.Key:m.Value for m in self.Metadata}
 
 
 class TaskRun(pipeline_base):
@@ -444,7 +483,8 @@ class Metadata(pipeline_base):
     Key = Column(String, nullable=False)
     Value = Column(String, nullable=False)
 
-    Product = relationship("Product",back_populates="Metadata")
+    Products: Mapped[List["Product"]] = relationship("Product",secondary=ProductMetadataAssociation,back_populates="Metadata")
+
 
     def __init__(self,ProductID:int,Key:str,Value:str,TaskID:int|None=None):
         super().__init__(ProductID=ProductID,TaskID=TaskID,Key=Key,Value=Value)

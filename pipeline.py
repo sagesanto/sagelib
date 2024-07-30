@@ -606,15 +606,15 @@ if __name__ == "__main__":
                     assert self.pipeline_run in i.UsedByRunsAsInput 
 
             self.input_group[0].visualize_derivatives(self.pipeline_run)
-            # plt.show()
+            plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
             task_two_1_sub.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
             task_two_1_sub.visualize_precursors(fig=fig,ax=ax2)
-            # plt.show()
+            plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
             task_two_1_sub.visualize_derivatives(self.pipeline_run,fig=fig,ax=ax1)
             task_two_1_sub.visualize_derivatives(fig=fig,ax=ax2)
-            # plt.show()
+            plt.show()
             # visualize_graph({self.inputs[0].ID:id_traversal},f"Derivatives of Input {self.inputs[0].ID}")
             return 0
         
@@ -645,11 +645,11 @@ if __name__ == "__main__":
 
     
     # input_group = pipeline.input_group()
-    test_input = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input loc")
-    test_input_2 = pipeline.product("test_input","INPUT", current_dt_utc(),"test_input 2 loc")
-    test_input_3 = pipeline.product("test_input_3","INPUT", current_dt_utc(),"test_input 3 loc")
-    test_input_4 = pipeline.product(''.join(random.sample(stringlib.ascii_lowercase,7)),"INPUT", current_dt_utc(),''.join(random.sample(stringlib.ascii_lowercase,7)))
-    test_input_5 = pipeline.product("test_input_5","INPUT", current_dt_utc(),"test_input 5 loc")
+    test_input = pipeline.product("test_input", current_dt_utc(),"test_input loc")
+    test_input_2 = pipeline.product("test_input", current_dt_utc(),"test_input 2 loc")
+    test_input_3 = pipeline.product("test_input_3", current_dt_utc(),"test_input 3 loc")
+    test_input_4 = pipeline.product(''.join(random.sample(stringlib.ascii_lowercase,7)), current_dt_utc(),''.join(random.sample(stringlib.ascii_lowercase,7)))
+    test_input_5 = pipeline.product("test_input_5", current_dt_utc(),"test_input 5 loc")
 
     test_input.add_derivatives([test_input_3,test_input_4])
     test_input_5.add_precursor(test_input_4)
