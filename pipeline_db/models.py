@@ -255,8 +255,8 @@ class Product(pipeline_base):
     def _mdkeys(self):
         return list(self.metadata_dict().keys())
 
-    def getmd(self,key:str,default_val:str) -> str:
-        """Retrieve product metadata with key 'key'. If no such metadata exists, return default_val instead.
+    def getmd(self,key:str,default_val:str|None = None) -> str:
+        """Retrieve product metadata with key 'key'. If no such metadata exists, return default_val instead (defaults to None).
 
         :type key: str
         :type default_val: str
