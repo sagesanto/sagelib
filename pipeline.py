@@ -1,5 +1,6 @@
 from __future__ import annotations
 import sys, os
+import shutil
 from os.path import abspath, join, dirname, exists, basename
 from abc import ABC, abstractmethod
 import logging
@@ -125,6 +126,9 @@ class PipelineDB:
         self.session.refresh(product)
         self.logger.info(f"Logged {repr(product)} as input.")
         return product
+
+    def attach_product(self,product:Product):
+        return self.session.merge(product)
 
     def close(self):
         self.session.close()
@@ -436,6 +440,9 @@ class Pipeline:
             keywords[task] = task.required_params
         return keywords
     
+    def attach_product(self,product:Product):
+        return self.db.attach_product(product)
+    
     def run(self, input:ProductGroup|List[Product|ProductGroup]) -> int:
         if not isinstance(input, ProductGroup):
             ps = [p for p in input if isinstance(p,Product)]
@@ -525,6 +532,14 @@ class Pipeline:
         self.db.record_pipeline_end(self.pipeline_run,current_dt_utc(),self.success,self.failed,self.crashed)
         self.db.session.expire_all()
         return self.success
+
+    def move_product(self,product:Product,dest:str):
+        dest = abspath(dest)
+        product = self.db.find_product(ID=product.ID)[0] # get our version
+        shutil.move(product.product_location,dest)
+        product.product_location = dest
+        self.db.commit()
+        
 
 if __name__ == "__main__":
     if os.path.exists(r"pipeline_db\.env"):

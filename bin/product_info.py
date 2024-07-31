@@ -93,12 +93,24 @@ def product_info(session, filepath:str|None, prod_id:str|None=None):
         if producer not in producers:
             producers[producer] = 0
         producers[producer] += 1
-        
-    lines.append("Derivative Types:")
-    lines.extend([f"    {key}: {val}" for key,val in output_types.items()])
-    lines.append("Derivative-Producing Pipelines:")
-    lines.extend([f"    {key}: {val}" for key,val in producers.items()])
+    if output_types:
+        lines.append("Derivative Types:")
+        lines.extend([f"    {key}: {val}" for key,val in output_types.items()])
+        lines.append("Derivative-Producing Pipelines:")
+        lines.extend([f"    {key}: {val}" for key,val in producers.items()])
+    else:
+        lines.append("No derivatives.")
     lines.append('')
+    lines.append(section_sep)
+    lines.append("Metadata")
+    lines.append(section_sep)
+    meta_dict = prod.metadata_dict()
+    if meta_dict:
+        lines.extend([f"    {key}: {val}" for key,val in meta_dict.items()])
+    else:
+        lines.append("(No Metadata)")
+    lines.append(" ")
+        
 
     return("\n".join(lines)), prod
 

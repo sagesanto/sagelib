@@ -248,7 +248,7 @@ class Product(pipeline_base):
         :rtype: str
         """
         try:
-            return self._metadata_dict[index]
+            return self.metadata_dict[index]
         except KeyError as e:
             raise KeyError(f"Product {repr(self)} has no metadata record with key '{index}'") from e
     
