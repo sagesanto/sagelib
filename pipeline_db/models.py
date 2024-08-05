@@ -492,6 +492,9 @@ class Metadata(pipeline_base):
     def __init__(self,ProductID:int,Key:str,Value:str,TaskID:int|None=None):
         super().__init__(ProductID=ProductID,TaskID=TaskID,Key=Key,Value=Value)
 
+    def __str__(self):
+        return f"Metadata[{self.Key}={self.Value}]"
+
 
 
 class PrecursorProductAssociation(pipeline_base):
