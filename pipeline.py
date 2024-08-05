@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 MODULE_PATH = abspath(dirname(__file__))
 sys.path.append(join(MODULE_PATH,os.path.pardir))
 try:
-    from . import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db
+    from . import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db, product_query
     from utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 except ImportError:
-    from sagelib import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db
+    from sagelib import PipelineRun, Product, TaskRun, Metadata, ProductGroup, pipeline_utils, utils, configure_db, product_query
     from sagelib.utils import now_stamp, tts, stt, dt_to_utc, current_dt_utc, visualize_graph    
 
 sys.path.remove(join(MODULE_PATH,os.path.pardir))
@@ -54,25 +54,22 @@ class PipelineDB:
     def add(self,*args,**kwargs:Mapping[str,Any]):
         self.session.add(*args,**kwargs)
 
-    def find_product(self, **filters):
-        # returns a QUERY!
-        query = self.session.query(Product).order_by(Product.creation_dt.desc())
-        if filters:
-            for colname, cond_val in filters.items():
-                col = getattr(Product,colname)
-                if col is None:
-                    raise AttributeError(f"Product table has no column {colname}")
-                query = query.filter(col.like(cond_val))
-        return query
+    def find_product(self, metadata:None|dict=None, **filters):
+        # returns products
+        return self.product_query(metadata=metadata,**filters).all()
     
-    def record_task_start(self, taskname, start_dt, pipeline_run_id,**kwargs):
+    def product_query(self, metadata:None|dict=None, **filters)
+        # returns a query
+        return product_query(self.db.session,metadata=metadata,**filters)
+    
+    def record_task_start(self, taskname:str, start_dt:datetime, pipeline_run_id:int,**kwargs):
         start_str = tts(dt_to_utc(start_dt))
         task_record = TaskRun(TaskName=taskname,StartTimeUTC=start_str,PipelineRunID=pipeline_run_id,**kwargs)
         self.session.add(task_record)
         self.commit()
         return task_record
 
-    def record_task_end(self,task_run,end_dt,status_codes):
+    def record_task_end(self,task_run:TaskRun,end_dt:datetime,status_codes:int):
         end_str = tts(dt_to_utc(end_dt))
         task_run.EndTimeUTC = end_str
         task_run.StatusCodes = status_codes
@@ -81,7 +78,7 @@ class PipelineDB:
     def commit(self):
         self.session.commit()
 
-    def record_pipeline_start(self, pipeline_name, pipeline_version, start_dt, config, log_filepath=None):
+    def record_pipeline_start(self, pipeline_name:str, pipeline_version:str, start_dt:datetime, config:utils.Config, log_filepath:str|None=None):
         start_str = tts(dt_to_utc(start_dt))
         config_str = str(config)
         run = PipelineRun(PipelineName=pipeline_name,PipelineVersion=pipeline_version,StartTimeUTC=start_str,Config=config_str,LogFilepath=log_filepath)
@@ -89,7 +86,7 @@ class PipelineDB:
         self.commit()
         return run
     
-    def record_pipeline_end(self, pipeline_run, end_dt, success, failed, crashed):
+    def record_pipeline_end(self, pipeline_run:PipelineRun, end_dt:datetime, success:bool, failed:List[str], crashed:List[str]):
         end_str = tts(dt_to_utc(end_dt))
         failed = ",".join(failed)
         crashed = ",".join(crashed)
