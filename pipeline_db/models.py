@@ -494,6 +494,9 @@ class Metadata(pipeline_base):
 
     def __str__(self):
         return f"Metadata[{self.Key}={self.Value}]"
+    
+    def __repr__(self):
+        return str(self)
 
 
 
