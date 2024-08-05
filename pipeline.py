@@ -219,22 +219,23 @@ class Task(ABC):
         self.db.session.refresh(self.input_group)
         return product
 
-    def product_query(self, data_type: str, **filters: Mapping[str,Any]):
+    def product_query(self, data_type: str, metadata:None|dict=None, **filters: Mapping[str,Any]):
         """ Returns a query for products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator. The query can be run with :func:`Task.run_query()` 
         :param data_type: _description_
         :type data_type: str
-        :type group_policy: str, optional
+        :param metadata: optional argument of key:value dict. products will be required to have associated metadata records for each key, each with the specified value
+        :type metadata: None|dict
         :return: _description_
         :rtype: List[Product]
         """
-        return self.pipeline_run.related_product_query(self.db.session, use_superseded=self.use_superseded, data_type=data_type, **filters)
+        return self.pipeline_run.related_product_query(self.db.session, use_superseded=self.use_superseded, metadata=metadata, data_type=data_type, **filters)
 
-    def find_products(self, data_type: str, **filters: Mapping[str,Any]) -> List[Product]:
+    def find_products(self, data_type: str, metadata:None|dict=None, **filters: Mapping[str,Any]) -> List[Product]:
         """ Finds products from the current pipeline run (inputs and previous outputs). Filters are keyword pairs. '%' is the wildcard operator.
 
         :param data_type: _description_
         :type data_type: str
-        :type group_policy: str, optional
+        :param metadata: optional argument of key:value pairs. products will be required to have associated metadata records for each key, each with the specified value
         :return: _description_
         :rtype: List[Product]
 
@@ -252,7 +253,7 @@ class Task(ABC):
         >> headers = self.find_products(data_type="Header",data_subtype="%")
         """
 
-        return self.run_product_query(self.product_query(data_type=data_type, **self.filters, **filters))
+        return self.run_product_query(self.product_query(data_type=data_type, metadata=metadata, **self.filters, **filters))
         
 
     def run_product_query(self,query:Query):
@@ -264,10 +265,7 @@ class Task(ABC):
         :param product: the product to attach metadata to
         :type product: Product
         """
-        print(f"attempting to add the following metadata to product {product.ID}: {kwargs.items()}")
         product.add_metadata(self.task_run.ID,**kwargs)
-        print(f"Product {product.ID} now has Metadata {product.Metadata}")
-        print("Committing...")
         self.db.commit()
 
     @property
@@ -327,7 +325,6 @@ class Pipeline:
             default_cfg_path = abspath(default_cfg_path)
             self.config.load_defaults(default_cfg_path)
         self.dbpath = self.config._get_default("DB_PATH")
-        print(self.dbpath)
         self.db = PipelineDB(self.dbpath, self.logger)
         self.version = version
         self.failed = []
@@ -476,7 +473,6 @@ class Pipeline:
 
         self.inputs = [self.db.record_input_data(i, self.pipeline_run) for i in self.input_group.Products]
         self.db.session.refresh(self.input_group)
-        print(self.inputs)
 
         self.logger.info(f"Beginning run {self.pipeline_run.ID} (pipeline {self.name} v{self.version})")
         for i, task in enumerate(self.tasks):
@@ -562,6 +558,7 @@ if __name__ == "__main__":
             self.logger.info(self.config("TEST_DEFAULT"))
             self.config.set("TEST_SET_ONE","test task one set this!")
             outproduct = self.publish_output("test_one","test one output loc",precursors=self.input_group.Products)
+            self.add_metadata(outproduct,t1="test1", t2="test2")
             fig, (ax1,ax2) = plt.subplots(1,2)
             outproduct.visualize_precursors(self.pipeline_run,fig=fig,ax=ax1)
             outproduct.visualize_precursors(fig=fig,ax=ax2)
@@ -603,22 +600,28 @@ if __name__ == "__main__":
             task_two_out_1 = self.publish_output("test_two","test_two_1 output loc",precursors=precursors)
             task_two_out_2 = self.publish_output("test_two","test_two_2 output loc",precursors=precursors)
             task_two_1_sub = self.publish_output("test_two","test_two_3 output loc",precursors=[task_two_out_1])
-            self.logger.info(f"Input: {endl}{str(self.input_group[0])}")
-            self.logger.info(f"Task one's product: {endl}{str(task_one_out)}")
-            self.logger.info(f"Task two product 1: {endl}{str(task_two_out_1)}")
-            self.logger.info(f"Task two product 2: {endl}{str(task_two_out_2)}")
-            self.logger.info(f"Task two 1 sub:product: {endl}{str(task_two_1_sub)}")
-            self.logger.info(f"All products from this run: {self.find_products('%')}")
-            self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
-            self.logger.info(f"task_one_out all derivatives: {endl}{f'{endl}'.join([repr(d) for d in task_one_out.all_derivatives()])}")
-            self.logger.info(f"Inputs[0] all derivatives: {endl}{f'{endl}'.join([repr(d) for d in self.input_group[0].all_derivatives()])}")
-            self.logger.info("Inputs[0] all derivatives only this run:")
+
+            md_prods = self.find_products("test_one",metadata={"t1":"test1","t2":"test2"})
+            self.logger.info(f"Found the following products with specific metadata (should be test task one's outproduct): {md_prods}")
+
+            assert md_prods[0].ID == task_one_out.ID
+
+            # self.logger.info(f"Input: {endl}{str(self.input_group[0])}")
+            # self.logger.info(f"Task one's product: {endl}{str(task_one_out)}")
+            # self.logger.info(f"Task two product 1: {endl}{str(task_two_out_1)}")
+            # self.logger.info(f"Task two product 2: {endl}{str(task_two_out_2)}")
+            # self.logger.info(f"Task two 1 sub:product: {endl}{str(task_two_1_sub)}")
+            # self.logger.info(f"All products from this run: {self.find_products('%')}")
+            # self.logger.info(f"traversal: {task_one_out.traverse_derivatives(lambda p: p.product_location)}")
+            # self.logger.info(f"task_one_out all derivatives: {endl}{f'{endl}'.join([repr(d) for d in task_one_out.all_derivatives()])}")
+            # self.logger.info(f"Inputs[0] all derivatives: {endl}{f'{endl}'.join([repr(d) for d in self.input_group[0].all_derivatives()])}")
+            # self.logger.info("Inputs[0] all derivatives only this run:")
             all_derivs = '\n'.join([repr(d) for d in self.input_group[0].all_derivatives(pipeline_run=self.pipeline_run)])
-            self.logger.info(f"{all_derivs}")
+            # self.logger.info(f"{all_derivs}")
             id_traversal = self.input_group[0].traverse_derivatives(lambda s: s.ID,pipeline_run=self.pipeline_run)
-            self.logger.info(f"Inputs[0] derivative id traversal: {endl}{id_traversal}")
+            # self.logger.info(f"Inputs[0] derivative id traversal: {endl}{id_traversal}")
             pipeline_id_traversal = self.input_group[0].traverse_derivatives(lambda s: (s.ID, s.producing_pipeline_run_id),pipeline_run=self.pipeline_run)
-            self.logger.info(f"Inputs[0] pipeline id traversal: {endl}{pipeline_id_traversal}")
+            # self.logger.info(f"Inputs[0] pipeline id traversal: {endl}{pipeline_id_traversal}")
 
             for i in self.input_group:
                 if i.ProducingPipeline != self.pipeline_run:

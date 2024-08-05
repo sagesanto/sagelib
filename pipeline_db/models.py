@@ -8,8 +8,8 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, null
-from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, null, and_
+from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session, aliased
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -52,6 +52,27 @@ ProductMetadataAssociation = Table(
     Column('MetadataID', Integer, ForeignKey('Metadata.ID'), nullable=False,primary_key=True),
 )
 
+def product_query(dbsession:scoped_session, metadata:dict|None=None, **filters:Mapping[str,Any]):
+    query = dbsession.query(Product).order_by(Product.creation_dt.desc())
+    if filters:
+            for colname, cond_val in filters.items():
+                col = getattr(Product,colname)
+                if col is None:
+                    raise AttributeError(f"Product table has no column {colname}")
+                query = query.filter(col.like(cond_val))
+    if metadata:
+        md_filters = []
+        for i, (k,v) in enumerate(metadata.items()):
+            md_alias = aliased(Metadata, name=f"md_alias{i}")
+            assoc_alias = aliased(ProductMetadataAssociation, name=f"assoc_alias{i}")
+            # do the joins to populate these values
+            query = query.join(assoc_alias,Product.ID==assoc_alias.c.ProductID).join(md_alias,assoc_alias.c.MetadataID==md_alias.ID)
+            # add filters to filter on these values
+            md_filters.append(and_(md_alias.Key==k, md_alias.Value==v))
+        query = query.filter(and_(*md_filters))
+    query = query.group_by(Product.ID)
+
+    return query
 
 
 class PipelineRun(pipeline_base):
@@ -79,70 +100,77 @@ class PipelineRun(pipeline_base):
     def __repr__(self):
         return f"'{self.PipelineName}' v{self.PipelineVersion} (run #{self.ID})"
     
-    def related_product_query(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
+    def related_product_query(self, dbsession:scoped_session, use_superseded:bool=False, metadata:None|dict=None, **filters:Mapping[str,Any]):
         """Return a Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
         
         This Query can be executed using :func:`PipelineRun.run_query` to find the pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
 
         :param dbsession: sqlalchemy database session with which to query
+        :param metadata: optional argument of key:value pairs. products will be required to have associated metadata records for each key, each with the specified value
         :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
 
         :returns: list of products 
         """
-        query = dbsession.query(Product).filter(
-            (Product.producing_pipeline_run_id == self.ID) | 
-            (Product.UsedByRunsAsInput.any(PipelineRun.ID == self.ID))
-        ).order_by(Product.creation_dt.desc())
-        if filters:
-            for colname, cond_val in filters.items():
-                col = getattr(Product,colname)
-                if col is None:
-                    raise AttributeError(f"Product table has no column {colname}")
-                query = query.filter(col.like(cond_val))
+        query = product_query(dbsession,metadata=metadata,**filters).\
+                    filter((Product.producing_pipeline_run_id == self.ID) | (Product.UsedByRunsAsInput.any(PipelineRun.ID == self.ID))).\
+                    order_by(Product.creation_dt.desc())
+        
         if not use_superseded:
-            subq = dbsession.query(SupersessorAssociation).join(Product,SupersessorAssociation.SupersededID==Product.ID).join(PipelineRun,Product.producing_pipeline_run_id==PipelineRun.ID).filter(PipelineRun.ID == self.ID).subquery()
+            subq = dbsession.query(SupersessorAssociation).\
+                join(Product,SupersessorAssociation.SupersededID==Product.ID).\
+                    join(PipelineRun,Product.producing_pipeline_run_id==PipelineRun.ID).\
+                        filter(PipelineRun.ID == self.ID).subquery()
             query = query.outerjoin(subq,Product.ID==subq.c.SupersededID).filter(subq.c.SupersededID==null())
         
         return query
-
-    def get_related_products(self, dbsession:scoped_session, use_superseded:bool=False, **filters:Mapping[str,Any]):
-        """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
-        
-        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
-
-        :param dbsession: sqlalchemy database session with which to query
-        :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
-
-        :returns: list of products 
-        """
-        query = self.related_product_query(dbsession,use_superseded,**filters)
-        related_products = query.all()
-        return related_products
     
-    def get_group_products(self, group_id:str, dbsession:scoped_session, **filters:Mapping[str,Any]):
+    def group_product_query(self, group_id:str, dbsession:scoped_session, metadata:None|dict=None, **filters:Mapping[str,Any]):
         """Query for products among this PipelineRun's outputs that were produced by a task with `GroupID` == `group_id`. optionally, add keyword arguments to filter Products.
         
         returns products ordered by creation dt, descending 
         :param group_id: the id of the group from which to look for products
         :param dbsession: sqlalchemy database session with which to query
+        :param metadata: optional argument of key:value pairs. products will be required to have associated metadata records for each key, each with the specified value
         :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
 
         :returns: list of products
         """
-        
-        query = dbsession.query(Product).filter(
-            (Product.producing_pipeline_run_id == self.ID) &
-            (Product.ProducingTask.TaskGroupID == group_id)
-        ).order_by(Product.creation_dt.desc())
+        query = self.related_product_query(dbsession,metadata=metadata,**filters)
 
-        if filters:
-            for colname, cond_val in filters.items():
-                col = getattr(Product,colname)
-                if col is None:
-                    raise AttributeError(f"Product table has no column {colname}")
-                query = query.filter(col.like(cond_val))
+        query = dbsession.query(Product).filter((Product.ProducingTask.TaskGroupID == group_id))
+        return query
+
+    def get_related_products(self, dbsession:scoped_session, use_superseded:bool=False, metadata:None|dict=None, **filters:Mapping[str,Any]):
+        """Query for products among this PipelineRun's inputs an outputs. optionally, add keyword arguments to filter Products
+        
+        Query this pipeline run's inputs and the outputs of previous task runs in this pipeline run for Products. Ordered by creation datetime, newest first.
+
+        :param dbsession: sqlalchemy database session with which to query
+        :param metadata: optional argument of key:value pairs. products will be required to have associated metadata records for each key, each with the specified value
+        :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
+
+        :returns: list of products 
+        """
+        query = self.related_product_query(dbsession,use_superseded,metadata=metadata, **filters)
         related_products = query.all()
         return related_products
+    
+
+    def get_group_products(self, group_id:str, dbsession:scoped_session, metadata:None|dict=None, **filters:Mapping[str,Any]):
+        """Query for products among this PipelineRun's outputs that were produced by a task with `GroupID` == `group_id`. optionally, add keyword arguments to filter Products.
+        
+        returns products ordered by creation dt, descending 
+        :param group_id: the id of the group from which to look for products
+        :param dbsession: sqlalchemy database session with which to query
+        :param metadata: optional argument of key:value pairs. products will be required to have associated metadata records for each key, each with the specified value
+        :param **filters: keyword argument filters to apply to the query. Keys must be columns of the PipelineRun table. supports wildcarding with %
+
+        :returns: list of products
+        """
+        query = self.group_product_query(group_id=group_id,dbsession=dbsession,metadata=metadata,**filters)
+        related_products = query.all()
+        return related_products
+
 
 class Product(pipeline_base):
     """Inputs and outputs of Pipelines
@@ -426,12 +454,9 @@ class Product(pipeline_base):
         :param task_id: the ID of the task adding the metadata
         :type task_id: int
         """
-        print(f"Product {self.ID}: adding metadata for task {task_id}")
-        print(f"Metadata before: {self.Metadata}")
         for k,v in kwargs.items():
             meta = Metadata(self.ID,str(k),str(v),task_id)
             self.Metadata.append(meta)
-        print(f"Metadata after: {self.Metadata}")
         
     def metadata_dict(self):
         return {m.Key:m.Value for m in self.Metadata}
