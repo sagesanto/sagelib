@@ -58,7 +58,7 @@ class PipelineDB:
         # returns products
         return self.product_query(metadata=metadata,**filters).all()
     
-    def product_query(self, metadata:None|dict=None, **filters)
+    def product_query(self, metadata:None|dict=None, **filters):
         # returns a query
         return product_query(self.db.session,metadata=metadata,**filters)
     
