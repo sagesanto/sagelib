@@ -60,7 +60,7 @@ class PipelineDB:
     
     def product_query(self, metadata:None|dict=None, **filters):
         # returns a query
-        return product_query(self.db.session,metadata=metadata,**filters)
+        return product_query(self.session,metadata=metadata,**filters)
     
     def record_task_start(self, taskname:str, start_dt:datetime, pipeline_run_id:int,**kwargs):
         start_str = tts(dt_to_utc(start_dt))
@@ -623,6 +623,8 @@ if __name__ == "__main__":
             for i in self.input_group:
                 if i.ProducingPipeline != self.pipeline_run:
                     assert self.pipeline_run in i.UsedByRunsAsInput 
+
+            self.db.product_query(data_type="%")
 
             self.input_group[0].visualize_derivatives(self.pipeline_run)
             plt.show()
