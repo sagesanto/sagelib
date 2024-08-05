@@ -248,7 +248,7 @@ class Product(pipeline_base):
         :rtype: str
         """
         try:
-            return self.metadata_dict[index]
+            return self.metadata_dict()[index]
         except KeyError as e:
             raise KeyError(f"Product {repr(self)} has no metadata record with key '{index}'") from e
     
@@ -426,9 +426,12 @@ class Product(pipeline_base):
         :param task_id: the ID of the task adding the metadata
         :type task_id: int
         """
+        print(f"Product {self.ID}: adding metadata for task {task_id}")
+        print(f"Metadata before: {self.Metadata}")
         for k,v in kwargs.items():
             meta = Metadata(self.ID,str(k),str(v),task_id)
             self.Metadata.append(meta)
+        print(f"Metadata after: {self.Metadata}")
         
     def metadata_dict(self):
         return {m.Key:m.Value for m in self.Metadata}

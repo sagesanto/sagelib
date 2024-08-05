@@ -55,6 +55,7 @@ class PipelineDB:
         self.session.add(*args,**kwargs)
 
     def find_product(self, **filters):
+        # returns a QUERY!
         query = self.session.query(Product).order_by(Product.creation_dt.desc())
         if filters:
             for colname, cond_val in filters.items():
@@ -263,7 +264,10 @@ class Task(ABC):
         :param product: the product to attach metadata to
         :type product: Product
         """
+        print(f"attempting to add the following metadata to product {product.ID}: {kwargs.items()}")
         product.add_metadata(self.task_run.ID,**kwargs)
+        print(f"Product {product.ID} now has Metadata {product.Metadata}")
+        print("Committing...")
         self.db.commit()
 
     @property
