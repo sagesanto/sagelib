@@ -10,8 +10,7 @@ from matplotlib.axes import Axes
 
 from sqlalchemy import Column, Integer, String, ForeignKey, Table, null, and_
 from sqlalchemy.orm import relationship, Mapped, mapped_column, scoped_session, aliased
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.sql.elements import BinaryExpression
 
 sys.path.append(dirname(__file__))
 
@@ -52,29 +51,32 @@ ProductMetadataAssociation = Table(
     Column('MetadataID', Integer, ForeignKey('Metadata.ID'), nullable=False,primary_key=True),
 )
 
-def product_query(dbsession:scoped_session, metadata:dict|None=None, **filters:Mapping[str,Any]):
+def product_query(dbsession:scoped_session, metadata:dict|None=None, exprs:None|List[BinaryExpression]=None, **filters:Mapping[str,Any]):
     query = dbsession.query(Product).order_by(Product.creation_dt.desc())
+
+    to_apply = exprs or []
+    
     if filters:
             for colname, cond_val in filters.items():
                 col = getattr(Product,colname)
                 if col is None:
                     raise AttributeError(f"Product table has no column {colname}")
-                query = query.filter(col.like(cond_val))
+                to_apply.append(col.like(cond_val))
+
     if metadata:
-        md_filters = []
         for i, (k,v) in enumerate(metadata.items()):
             md_alias = aliased(Metadata, name=f"md_alias{i}")
             assoc_alias = aliased(ProductMetadataAssociation, name=f"assoc_alias{i}")
             # do the joins to populate these values
             query = query.join(assoc_alias,Product.ID==assoc_alias.c.ProductID).join(md_alias,assoc_alias.c.MetadataID==md_alias.ID)
             # add filters to filter on these values
-            md_filters.append(and_(md_alias.Key==k, md_alias.Value==v))
-        query = query.filter(and_(*md_filters))
+            to_apply.append(and_(md_alias.Key==k, md_alias.Value==v))
+
+    query = query.filter(and_(*to_apply))
     query = query.group_by(Product.ID)
 
     return query
-
-
+              
 class PipelineRun(pipeline_base):
     """ A permanent record that stores information about a past or ongoing Pipeline run.
     
@@ -254,7 +256,7 @@ class Product(pipeline_base):
         
         derivs = []
         if "derivatives" in kwargs:
-            precs = kwargs.pop("derivatives")
+            derivs = kwargs.pop("derivatives")
 
         super().__init__(data_type=data_type, producing_pipeline_run_id=producing_pipeline_run_id,
                          task_name=task_name, producing_task_run_id=producing_task_run_id, 
@@ -309,6 +311,7 @@ class Product(pipeline_base):
     def add_derivative(self,derivative:Product):
         if derivative not in self.derivatives:
             self.derivatives.append(derivative)
+            # add our metadata to our derivative
             mdkeys = derivative._mdkeys()
             for m in self.Metadata:
                 if m.Key not in mdkeys:
@@ -318,6 +321,7 @@ class Product(pipeline_base):
     def add_precursor(self,precursor:Product):
         if precursor not in self.precursors:
             self.precursors.append(precursor)
+            # copy precursor's metadata to us
             mdkeys = self._mdkeys()
             for m in precursor.Metadata:
                 if m.Key not in mdkeys:
@@ -326,13 +330,15 @@ class Product(pipeline_base):
 
     def add_derivatives(self,derivatives:List[Product]):
         for derivative in derivatives:
-            if derivative not in self.derivatives:
-                self.derivatives.append(derivative)
+            self.add_derivative(derivative)
+            # if derivative not in self.derivatives:
+                # self.derivatives.append(derivative)
 
     def add_precursors(self,precursors:Product):
         for precursor in precursors:
-            if precursor not in self.precursors:
-                self.precursors.append(precursor)
+            self.add_precursor(precursor)
+            # if precursor not in self.precursors:
+                # self.precursors.append(precursor)
 
     def traverse_derivatives(self,func:Callable[[Product,Tuple[Any, ...]],dict[Any,Any]| Any],*args:Tuple[Any, ...],pipeline_run:PipelineRun | None=None,maxdepth:int=-1,**kwargs:Mapping[str,Any]):
         """Recursively apply a function to each of the products in the derivative tree of this product, collecting and returning its result

@@ -626,6 +626,12 @@ if __name__ == "__main__":
 
             self.db.product_query(data_type="%")
 
+            self.logger.info(task_two_1_sub.Metadata)
+
+            assert len(task_two_1_sub.Metadata) == len(task_one_out.Metadata)
+            for k,v in task_two_1_sub.metadata_dict().items():
+                assert v == task_one_out[k]
+
             self.input_group[0].visualize_derivatives(self.pipeline_run)
             plt.show()
             fig, (ax1,ax2) = plt.subplots(1,2)
