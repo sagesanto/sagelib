@@ -1,5 +1,5 @@
 import os
-import tomli
+import tomlkit
 from datetime import datetime, timedelta
 import pytz
 from pytz import UTC
@@ -10,13 +10,63 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 
 class Config:
-    def __init__(self,filepath:str,default_env_key:str="CONFIG_DEFAULTS"):
+    def __init__(self,filepath:str,default_path:str|None=None,default_env_key:str="CONFIG_DEFAULTS"):
+        """Create a config object from a toml file. Optionally, add a fallback default toml config, read from `default_path`. If `default_path` is `None`, will also check the CONFIG_DEFAULTS environment varaible for a defaults filepath. 
+
+        Profiles (toml tables) can be selected with :func:`Config.choose_profile` and deselected with :func:`Config.clear_profile`. Keys in a profile will take precedence over keys in the rest of the file and in the defaults file.
+        If `"KEY"` is in both the standard config and the profile `"Profile1"`::
+        
+        >>> cfg = Config("config.toml",default_path="defaults.toml")
+        >>> cfg["KEY"] # VAL1 
+        >>> cfg.select_profile("Profile1")
+        >>> cfg["KEY"] # VAL2
+
+        If `"KEY"` is only in both the standard config::
+        >>> cfg["KEY"] # VAL1 
+        >>> cfg.select_profile("Profile1")
+        >>> cfg["KEY"] # VAL1
+
+        Values can be retrieved in a few ways:: 
+        
+        >>> # the following are equivalent:
+        >>> cfg["KEY"]
+        >>> cfg("KEY")
+        >>> # this allows a default value in case the key can't be found in a profile, main config, or default:
+        >>> cfg.get("KEY")  # will return None if not found
+        >>> cfg.get("KEY","Not found") # returns 'Not found' if not found
+        >>> # this queries the default config for a key. will fail if a default config is not set:
+        >>> cfg.get_default("KEY")
+        
+        Values can also be set. Setting a key that doesn't currently exist will add it to the config. Setting a key will change the state of the object but will not change the file unless :func:`Config.save()` is called::
+
+        >>> cfg["KEY"] = "VALUE"  # sets in selected profile, or in main config if no profile selected
+        >>> cfg["table"]["colnames"] = ["ra","dec"]  # can do nested set
+        >>> cfg.set("KEY") = "VALUE"  # sets in selected profile, or in main config if no profile selected
+        >>> cfg.set("KEY", profile=False) = "VALUE"  # sets in main profile, ignoring selected profile
+
+        Can write the whole config (not just the profile, and not including the defaults) into the given file::
+        
+        >>> cfg.write("test.toml")
+        
+        Or can write to the file the config was loaded from, overwriting previous contents (does not modify defaults file)::
+
+        >>> cfg.save()
+         
+        :param filepath: toml file to load config from
+        :type filepath: str
+        :param default_path: default toml file to load defaults from, defaults to None
+        :type default_path: str | None, optional
+        :param default_env_key: will load defaults from here if this is set and default_path is not provided, defaults to `"CONFIG_DEFAULTS"`
+        :type default_env_key: str, optional
+        """
         self._cfg = _read_config(filepath)
         self.selected_profile = None
         self._defaults = None
         self._filepath = filepath 
         self.selected_profile_name = None
-        self._default_path = os.getenv(default_env_key)
+        self._default_path = default_path
+        if not self._default_path:
+            self._default_path = os.getenv(default_env_key)
         if self._default_path:
             try:
                 self._defaults = _read_config(self._default_path)
@@ -36,6 +86,15 @@ class Config:
     def load_defaults(self, filepath:str):
         self._defaults = _read_config(filepath)
         self._default_path = filepath
+
+    def write(self,fpath):
+        """Writes the whole config loaded from file (not just the profile, and not including the defaults) into the given file"""
+        with open(fpath,"w") as f:
+            f.write(tomlkit.dumps(self._cfg))
+    
+    def save(self):
+        """Saves the whole config loaded from file (not just the profile, and not including the defaults) into the file it was loaded from"""
+        self.write(self._filepath)
 
     @property
     def has_defaults(self):
@@ -58,11 +117,10 @@ class Config:
         except KeyError:
             return default
 
-    def set(self,key:str,value:Any,profile:bool=False):
+    def set(self,key:str,value:Any,profile:bool=True):
         if profile:
-            if not self.selected_profile:
-                raise AttributeError("No config profile selected.")
-            self.selected_profile[key] = value
+            self[key] = value
+            return
         else:
             self._cfg[key] = value
 
@@ -80,6 +138,12 @@ class Config:
         except Exception:
             if self.has_defaults:
                 return self._get_default(index)
+        
+    def __setitem__(self,index:str,new_val:Any) -> Any:
+        if self.selected_profile:
+                self.selected_profile[index] = new_val
+                return
+        self._cfg[index] = new_val
     
     def __str__(self):
         self_str = ""
@@ -92,8 +156,12 @@ class Config:
         return self_str
 
     def __repr__(self) -> str:
-        return f"Config from {self._filepath} with {f'profile {self.selected_profile_name}' if self.selected_profile_name else 'no profile'} selected and {f'defaults loaded from {self._default_path}' if self.has_defaults else ' no defaults loaded'}"
+        return f"Config from {self._filepath} with {f'profile {self.selected_profile_name}' if self.selected_profile_name else 'no profile'} selected and {f'defaults loaded from {self._default_path}' if self.has_defaults else 'no defaults loaded'}"
 
+def _read_config(config_path:str):
+    with open(config_path, "rb") as f:
+        cfg = tomlkit.load(f)
+    return cfg
 
 def visualize_graph(graph_dict:dict,title:str,fig:Figure|None=None,ax:Axes|None=None) -> tuple[Figure, Axes]:
     G = nx.DiGraph()
@@ -168,7 +236,7 @@ def dt_to_utc(dt:datetime, require_existing_timezone:bool=False) -> datetime:
 
 def _read_config(config_path:str):
     with open(config_path, "rb") as f:
-        cfg = tomli.load(f)
+        cfg = tomlkit.load(f)
     return cfg
 
 def multi_replace(string:str, old_strs:list[str], subst_str:str) -> str:

@@ -302,7 +302,7 @@ def merge_dicts(d1,d2):
     raise NotImplementedError()
 
 class Pipeline:
-    def __init__(self, pipeline_name: str, tasks:List[Task], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None):
+    def __init__(self, pipeline_name: str, tasks:List[Task], outdir:str, config_path:str, version:str, default_cfg_path:str | None = None, default_cfg_env_key="PIPELINE_DEFAULTS_PATH"):
         self.name = pipeline_name
         # list of *constructed* task objects, not just classes
         self.tasks = tasks
@@ -313,14 +313,10 @@ class Pipeline:
         os.makedirs(self.outdir,exist_ok=True)
         # self.profile_name = profile_name
         config_path = abspath(config_path)
-        self.config = utils.Config(config_path, "PIPELINE_DEFAULTS_PATH")
+        self.config = utils.Config(config_path, abspath(default_cfg_path), default_env_key=default_cfg_env_key)
         # self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = join(self.outdir,f"{self.name}.log")
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
-        # db can ONLY be set in the default cfg
-        if default_cfg_path:
-            default_cfg_path = abspath(default_cfg_path)
-            self.config.load_defaults(default_cfg_path)
         self.dbpath = self.config._get_default("DB_PATH")
         self.db = PipelineDB(self.dbpath, self.logger)
         self.version = version
