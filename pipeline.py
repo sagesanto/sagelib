@@ -313,7 +313,9 @@ class Pipeline:
         os.makedirs(self.outdir,exist_ok=True)
         # self.profile_name = profile_name
         config_path = abspath(config_path)
-        self.config = utils.Config(config_path, abspath(default_cfg_path), default_env_key=default_cfg_env_key)
+        if default_cfg_path:
+            default_cfg_path = abspath(default_cfg_path)
+        self.config = utils.Config(config_path, default_cfg_path, default_env_key=default_cfg_env_key)
         # self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = join(self.outdir,f"{self.name}.log")
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
