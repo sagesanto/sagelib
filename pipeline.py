@@ -403,7 +403,12 @@ class Pipeline:
                         missing[task.name].append(dtype)
                     else:
                         missing[task.name] = [dtype]
-            datatypes_supplied.extend(task.product_types_produced)
+            task_prodtypes = task.product_types_produced
+            for prodtype in task_prodtypes:
+                p_split = prodtype.split(".")
+                datatypes_supplied.append("*")  # we now have at least one product 
+                datatypes_supplied.append(p_split[0])   # we have a product of the main datatype
+                datatypes_supplied.append(prodtype)     # we also have a product of this specific subtype
             datatypes_supplied = list(set(datatypes_supplied))
         if missing:
             raise AttributeError(f"Tasks are missing the following data products: {missing}")
