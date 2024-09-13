@@ -25,6 +25,7 @@ def df_to_ds9(df,outname,xname,yname,physical=False,region_radius=5,color="green
 
 def table_to_ds9(table, outname, xname, yname, physical=False, region_radius=5,color="green",labels:Iterable[Any]=None):
     df = table.to_pandas()
+    df.reset_index(drop=True,inplace=True)
     df_to_ds9(df, outname, xname, yname, physical, region_radius,color=color,labels=labels)
 
 def ldac_to_ds9(fits_file, outname, physical=False,bad_sextractor_flags=None,region_radius=5,labels:Iterable[Any]=None):

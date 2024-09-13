@@ -312,10 +312,13 @@ class Pipeline:
         self.outdir = abspath(outdir)
         os.makedirs(self.outdir,exist_ok=True)
         # self.profile_name = profile_name
-        config_path = abspath(config_path)
-        if default_cfg_path:
-            default_cfg_path = abspath(default_cfg_path)
-        self.config = utils.Config(config_path, default_cfg_path, default_env_key=default_cfg_env_key)
+        self.config_path = abspath(config_path)
+        self.default_cfg_path = default_cfg_path
+        self.default_cfg_env_key = default_cfg_env_key
+
+        if self.default_cfg_path:
+            self.default_cfg_path = abspath(self.default_cfg_path)
+        self.config = utils.Config(self.config_path, self.default_cfg_path, default_env_key=self.default_cfg_env_key)
         # self.config.choose_profile(profile_name) # this is the scoped config in the file
         self.logfile = join(self.outdir,f"{self.name}.log")
         self.logger = pipeline_utils.configure_logger(self.name,self.logfile)
@@ -445,6 +448,11 @@ class Pipeline:
         return self.db.attach_product(product)
     
     def run(self, input:ProductGroup|List[Product|ProductGroup]) -> int:
+
+        # reload the config in case anything has changed
+        self.logger.info("Reloading config...")
+        self.config = utils.Config(self.config_path, self.default_cfg_path, default_env_key=self.default_cfg_env_key)
+
         if not isinstance(input, ProductGroup):
             ps = [p for p in input if isinstance(p,Product)]
             pgs = [pg for pg in input if isinstance(pg,ProductGroup)]
