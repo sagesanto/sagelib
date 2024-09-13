@@ -95,11 +95,13 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--dark", action="store_true", help="perform dark subtraction")
     parser.add_argument("-b", "--bias", action="store_true", help="perform bias subtraction")
     parser.add_argument("-a", "--align", action="store_true", help="perform alignment. will result in temporarily saving intermediate files. Will clear 'temp_align_dir' if it exists.")
-    parser.add_argument("-w", "--wcs", action="store_true", help="perform wcs solving")
+    parser.add_argument("-w", "--wcs", action="store_true", help="(NOT IMPLEMENTED) perform wcs solving")
 
     parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process. will overwrite existing files that share the same name in the intermediate directory.")
 
     parser.add_argument("--ref_image_path", action="store", type=str,help="the path to the reference image to use for alignment. if not specified, will use the first image in the input directory")
+
+    parser.add_argument("-v", "--visualize", action="store_true", default=True, help="show superstack when finished")
 
     args = parser.parse_args()
 
@@ -111,6 +113,8 @@ if __name__ == "__main__":
     do_wcs = args.wcs
     save_intermediate = args.intermediate
     ref_image_path = args.ref_image_path
+    
+    visualize = args.visualize
 
     # if no operation arguments are specified, do all of them
     if not (do_slice or do_flat or do_dark or do_bias or do_align or do_wcs):
@@ -330,22 +334,12 @@ if __name__ == "__main__":
             os.remove(os.path.join(intermediate_align_dir,"intermediate"))
             print("Cleaned up") 
         except:
-            print(f"Failed to remove intermediate alignment files at {intermediate_align_dir}. They may have already been deleted or access may be restricted.")
-    # next:
-    # SuperDarkBias reduce - add 'db' to name
-    # for each flat, reduce the flats with matching filter
-    #   only load flats we need
-    #       SuperNormFlat_g = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_g.fits'))
-    #       SuperNormFlat_r = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_r.fits'))
-    #       SuperNormFlat_i = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_i.fits'))
-    #       SuperNormFlat_C = Frame.from_fits(_CALIB_PATH/Path('SuperNormFlat_C.fits'))
-    #   add 'f' to name
-    # save frames to outdir ( don't close )
-    # if doing alignment, align all frames, write to aligned subdir of the output
-    #   choose first frame as reference for now - in future, we should do quality checks to find a frame to use as reference
-    #   add 'a' to name
-    # if stack, stack by filter, add 'stacked_{filter name}' to name
-    #   frame quality and rejection?
+            print(f"Warning: unable to remove intermediate alignment files at {intermediate_align_dir}. They may have already been deleted or access may be restricted.")
+    
+    if visualize:
+        show_img(super_stack.img,"Superstack")
+    
+    #  measure psf, judge frame quality and do rejection?
     # if wcs, solve the images (solve the aligned images if we aligned, otherwise solve the non-aligned ones, or just solve the stacked images)
     #   write to same directory probably
     #   add 's' to name

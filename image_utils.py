@@ -10,7 +10,10 @@ from astropy.nddata import CCDData
 import sys
 import six
 sys.modules['astropy.extern.six'] = six
-# displaying imports
+
+from datetime import datetime, timedelta
+
+# for display 
 import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
@@ -51,10 +54,10 @@ def findAllIn(data_dir, file_matching, contain_dir=False, save_ls=True, save_nam
     return list_files
 
 
-# @Pei Qin
+# adapted from @Pei Qin
 def increment_date(strdate, tincrement):
-    parsed = parse(strdate)
-    later = parsed + relativedelta(seconds=tincrement)
+    parsed = datetime.strptime(strdate,"%Y-%m-%dT%H:%M:%S+00:00")
+    later = parsed + timedelta(seconds=tincrement)
     incremented_dateobj = later.strftime('%Y-%m-%dT%X.0000')
     return incremented_dateobj
 
