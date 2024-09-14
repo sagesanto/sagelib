@@ -23,6 +23,7 @@ from os.path import abspath
 import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
+from sagelib import Frame
 
 from photutils.utils import calc_total_error
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry
@@ -144,7 +145,6 @@ def main():
     # path to this folder
     CALIB_ROOT = abspath(os.path.join(abspath(getsourcefile(lambda:0)),os.pardir))
     os.chdir(CALIB_ROOT)
-    from sagelib.Frame import Frame
 
     calib_config = configparser.ConfigParser()
     calib_config.read('calib_config.txt')

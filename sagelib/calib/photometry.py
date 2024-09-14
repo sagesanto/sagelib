@@ -1,5 +1,5 @@
-from sagelib.Frame import Frame
-from sagelib.img.imanalysis import fwhm
+from sagelib import Frame
+from sagelib.calib.imanalysis import fwhm
 from photutils.utils import calc_total_error
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from photutils.detection import DAOStarFinder
