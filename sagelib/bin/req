@@ -1,0 +1,10 @@
+#! python
+
+import sys, os
+
+
+pkgs = []
+with open("requirements.txt","r") as f:
+    for l in f:
+        pkgs.append(l.split("==")[0])
+print(pkgs)

@@ -7,6 +7,8 @@ uncertainty.ipynb
 random
 docs/source/autoapi
 test/*
+build
+launch.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
