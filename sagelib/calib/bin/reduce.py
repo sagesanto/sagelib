@@ -117,6 +117,9 @@ def main():
 
     CALIB_PATH = calib_config["calib_path"]
 
+    FITS_DATE_FMT_IN = calib_config["date_format_in"]
+    FITS_DATE_FMT_OUT = calib_config["date_format_out"]
+
     filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
     print(f"Found the following files as input: {', '.join(filenames)}")
 
@@ -124,7 +127,7 @@ def main():
     cubenames = []
     # slice any cubes - into what directory should these go? should we then move non-cube data to that folder too before proceeding?
     for f in filenames:
-        frame = Frame.from_fits(raw_data_dir/Path(f))
+        frame = Frame.from_fits(raw_data_dir/Path(f), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         d = frame.img.ndim
         if d > 2:
             cubenames.append(f)
@@ -147,7 +150,7 @@ def main():
     filters = {}
     for f in filenames:
         print(f"Opening {f}")
-        frame = Frame.from_fits(os.path.join(raw_data_dir,f))
+        frame = Frame.from_fits(os.path.join(raw_data_dir,f), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         frames.append(frame)
 
     if not frames:
@@ -157,7 +160,7 @@ def main():
     reduced = []
     if do_bias:
         print("Subtracting superbias")
-        super_bias = Frame.from_fits(os.path.join(CALIB_PATH,calib_config["bias_pattern"]))
+        super_bias = Frame.from_fits(os.path.join(CALIB_PATH,calib_config["bias_pattern"]), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         for i, frame in enumerate(frames):
             reduced.append(frames[i]-super_bias)
             reduced[i].name = "b_"+frames[i].name
@@ -171,7 +174,7 @@ def main():
 
     if do_dark:
         dark_name = calib_config["dark_pattern"].replace("{exptime}",str(exptime))
-        super_dark = Frame.from_fits(os.path.join(CALIB_PATH,dark_name))
+        super_dark = Frame.from_fits(os.path.join(CALIB_PATH,dark_name), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
         print("Subtracting superdark")
         for i, frame in enumerate(reduced):
@@ -192,7 +195,7 @@ def main():
         superflats = {}
         for filt in filters:
             filt_name = calib_config["flat_pattern"].replace("{filter}",filt)
-            superflats[filt] = Frame.from_fits(CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
+            superflats[filt] = Frame.from_fits(CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
         print("Subtracting superflats")
         for i, frame in enumerate(reduced):
@@ -290,7 +293,7 @@ def main():
 
     super_stack.write(output_dir/Path(f'{target_name}_superstack.fits'),overwrite=True)
 
-    super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'))
+    super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
     # clean up after ourselves: if the user asked for alignment but not intermediate file saving, delete the intermediate files
     if not save_intermediate:

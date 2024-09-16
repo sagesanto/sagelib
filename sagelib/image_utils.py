@@ -21,6 +21,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 
+# date/time file formats. can be overridden when constructing frames
+FITS_DATE_IN = "%Y-%m-%dT%H:%M:%S.%f+00:00"
+FITS_DATE_OUT = "%Y-%m-%dT%X.%f"
+
 #@pchoi @Pei Qin
 def read_ccddata_ls(ls_toOp, data_dir, return_ls = False):
     if data_dir[-1] != '/':

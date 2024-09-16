@@ -12,6 +12,8 @@ from datetime import datetime
 import os, argparse
 from tqdm import tqdm
 
+from sagelib.image_utils import FITS_DATE_IN
+
 
 def Image_Segmentation(data, threshold, npixels):
 	sigma = 3.0 * gaussian_fwhm_to_sigma  # FWHM = 3.
@@ -30,11 +32,7 @@ def Deblending(convolved_data, segm, npixels, nlevels, contrast):
 # given a list of sources and a frame, return the FWHM of each of the sources
 def fwhm(Frame):
     fwhms = []
-    # should make this more general in the future:
-    try:
-        timestamp = datetime.strptime(Frame.header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S.0000').timestamp()
-    except ValueError:
-        timestamp = datetime.strptime(Frame.header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S.%f').timestamp()
+    timestamp = datetime.strptime(Frame.header["DATE-OBS"], FITS_DATE_IN).timestamp()
 
     data = Frame.img
     mean, median, std = sigma_clipped_stats(data, sigma=3.0)

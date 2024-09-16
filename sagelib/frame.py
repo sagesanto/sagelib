@@ -22,13 +22,13 @@ import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
 
-from sagelib.image_utils import show_img
+from sagelib.image_utils import show_img, FITS_DATE_IN, FITS_DATE_OUT
 
 # adapted from @Pei Qin
-def increment_date(strdate, tincrement):
-    parsed = datetime.strptime(strdate,"%Y-%m-%dT%H:%M:%S+00:00")
+def increment_date(strdate, tincrement, date_format_in=FITS_DATE_IN, date_format_out=FITS_DATE_OUT):
+    parsed = datetime.strptime(strdate,date_format_in)
     later = parsed + timedelta(seconds=tincrement)
-    incremented_dateobj = later.strftime('%Y-%m-%dT%X.0000')
+    incremented_dateobj = later.strftime(date_format_out)
     return incremented_dateobj
 
 
@@ -75,6 +75,8 @@ class Frame:
         self.img = img.astype(np.float32)
         self.header = header
         self.name = name
+        self.date_format_in = FITS_DATE_IN
+        self.date_format_out = FITS_DATE_OUT
         for key, value in kwargs.items():
             setattr(self, key, value)
         self._median = self._mean = self._stdev = None
@@ -145,7 +147,7 @@ class Frame:
             if self.header:
                 newheader = self.header.copy()
                 if tincrement is not None and start_time is not None:
-                    newheader['DATE-OBS'] = increment_date(start_time, tincrement * i)
+                    newheader['DATE-OBS'] = increment_date(start_time, tincrement * i,self.date_format_in,self.date_format_out)
             else:
                 newheader = fits.PrimaryHDU(do_not_scale_image_data=True, ignore_blank=True)
             

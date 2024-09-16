@@ -19,7 +19,9 @@ if not os.path.exists(CALIB_CONFIG):
             "bias_subdir":"bias",
             "bias_pattern": "SuperBias.fits",   
             "dark_pattern": "SuperDark_{exptime}s.fits",   
-            "flat_pattern": "SuperNormFlat_{filter}.fits"}
+            "flat_pattern": "SuperNormFlat_{filter}.fits",
+            "date_format_in": "%Y-%m-%dT%H:%M:%S.%f+00:00",
+            "date_format_out": "%Y-%m-%dT%H:%M:%S.%f+00:00"}
     for k,v in cfg.items():
         doc.add(k,v)
 
