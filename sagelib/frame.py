@@ -22,6 +22,8 @@ import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
 
+from sagelib.image_utils import show_img
+
 # adapted from @Pei Qin
 def increment_date(strdate, tincrement):
     parsed = datetime.strptime(strdate,"%Y-%m-%dT%H:%M:%S+00:00")
@@ -29,16 +31,6 @@ def increment_date(strdate, tincrement):
     incremented_dateobj = later.strftime('%Y-%m-%dT%X.0000')
     return incremented_dateobj
 
-# @pchoi @Pei Qin
-def show_img(img, title=None,titlesize=14):
-    norm = ImageNormalize(img, interval=ZScaleInterval(nsamples=600, contrast=0.25))
-    # would be nice to be able to choose between arcseconds and pixels for axes - plate scale in config file
-    fig, ax = plt.subplots()
-    fig.set_size_inches(6,6)
-    ax.imshow(img, cmap='Greys_r', origin='lower', norm=norm)
-    if title != None:
-        ax.set_title(title, fontsize=titlesize)   
-    plt.show()
 
 def open_frames_in_chunks(filename_list,max_size_mb):
     """

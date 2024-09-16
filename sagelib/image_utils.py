@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 
 #@pchoi @Pei Qin
@@ -36,3 +37,22 @@ def read_ccddata_ls(ls_toOp, data_dir, return_ls = False):
     if return_ls:
         toReturn = (toOp, ls)
     return toReturn
+
+# @pchoi @Pei Qin
+def show_img(img, title=None,titlesize=14,scale="log"):
+    if scale == "zscale" or scale == "z":
+        norm = ImageNormalize(img, interval=ZScaleInterval(nsamples=600, contrast=0.25))
+    elif scale == "log":
+        from astropy.stats import sigma_clipped_stats
+        mean, med, std = sigma_clipped_stats(img,sigma=3)
+        norm=LogNorm(vmin=mean)
+    else:
+        raise ValueError(f"'{scale}' is not a valid scaling option. Valid options are: 'log', 'zscale', 'z'")
+    # would be nice to be able to choose between arcseconds and pixels for axes - plate scale in config file
+    fig, ax = plt.subplots()
+    fig.set_size_inches(6,6)
+
+    ax.imshow(img, cmap='Greys_r', origin='lower', norm=norm)
+    if title != None:
+        ax.set_title(title, fontsize=titlesize)   
+    plt.show()

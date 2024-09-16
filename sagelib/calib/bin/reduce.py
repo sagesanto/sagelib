@@ -23,7 +23,14 @@ from os.path import abspath
 import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
 from astropy.visualization.mpl_normalize import ImageNormalize
-from sagelib import Frame
+
+from sagelib import Frame, get_user_config_path
+from sagelib.utils import Config, findAllIn
+from sagelib.image_utils import read_ccddata_ls, show_img
+from sagelib.calib import CALIB_CONFIG
+import sagelib.calib
+
+from os.path import join, abspath
 
 from photutils.utils import calc_total_error
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry
@@ -32,50 +39,6 @@ from photutils.detection import DAOStarFinder
 
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 warnings.filterwarnings("ignore", category=utils.exceptions.AstropyDeprecationWarning)
-
-#@pchoi @Pei Qin
-def read_ccddata_ls(ls_toOp, data_dir, return_ls = False):
-    if data_dir[-1] != '/':
-        data_dir = data_dir + '/'
-    if isinstance(ls_toOp, str):
-        input_ls = pd.read_csv(ls_toOp, header = None)
-        ls = input_ls[0]
-    else:
-        ls = ls_toOp
-    toOp = []
-    for i in ls:
-        toOp.append(CCDData.read(data_dir + i, unit = 'adu'))
-    toReturn = toOp
-    if return_ls:
-        toReturn = (toOp, ls)
-    return toReturn
-
-#@pchoi @Pei Qin
-def findAllIn(data_dir, file_matching, contain_dir=False, save_ls=True, save_name=None):
-    if data_dir[-1] != '/':
-        data_dir = data_dir + '/'
-    if save_name == None:
-        save_name = 'all_' + file_matching + '.txt'
-    list_files = glob.glob(data_dir + file_matching)
-    if not contain_dir:
-        list_files[:] = (os.path.basename(i) for i in list_files)
-    if save_ls:
-        with open(data_dir + save_name, "w") as output:
-            for i in list_files:
-                output.write(str(i) + '\n')
-    return list_files
-
-def show_img(img, title=None):
-    norm = ImageNormalize(img, interval=ZScaleInterval(nsamples=600, contrast=0.25))
-
-    fig, ax = plt.subplots()
-    fig.set_size_inches(6,6)
-    ax.imshow(img, cmap='Greys_r', origin='lower', norm=norm)
-    if title != None:
-        ax.set_title(title, fontsize=20)
-    # ax.tick_params(labelsize='large', width=1)
-
-    plt.show()
 
 def main():
     parser = argparse.ArgumentParser(description="Perform slicing, calibration, and alignment on input fits files. If no operations are specified, all will be performed.")
@@ -105,6 +68,9 @@ def main():
     parser.add_argument("--ref_image_path", action="store", type=str,help="the path to the reference image to use for alignment. if not specified, will use the first image in the input directory")
 
     parser.add_argument("-v", "--visualize", action="store_true", default=True, help="show superstack when finished")
+    
+    parser.add_argument("-c", "--config", action="store", default=CALIB_CONFIG, help="optional configuration path. not necessary for most use-cases")
+
 
     args = parser.parse_args()
 
@@ -116,6 +82,7 @@ def main():
     do_wcs = args.wcs
     save_intermediate = args.intermediate
     ref_image_path = args.ref_image_path
+    config_path = args.config  
     
     visualize = args.visualize
 
@@ -146,12 +113,9 @@ def main():
     CALIB_ROOT = abspath(os.path.join(abspath(getsourcefile(lambda:0)),os.pardir))
     os.chdir(CALIB_ROOT)
 
-    calib_config = configparser.ConfigParser()
-    calib_config.read('calib_config.txt')
-    calib_config = calib_config["DEFAULT"]
+    calib_config = Config(config_path)  # config_path *can* be passed in by cmdline and defaults to CALIB_CONFIG if not provided
 
-
-    _CALIB_PATH = calib_config["calib_path"]
+    CALIB_PATH = calib_config["calib_path"]
 
     filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
     print(f"Found the following files as input: {', '.join(filenames)}")
@@ -188,12 +152,12 @@ def main():
 
     if not frames:
         print("No frames to process!")
-        exit()
+        sys.exit(1)
 
     reduced = []
     if do_bias:
         print("Subtracting superbias")
-        super_bias = Frame.from_fits(_CALIB_PATH/Path("SuperBias.fits"))
+        super_bias = Frame.from_fits(os.path.join(CALIB_PATH,calib_config["bias_pattern"]))
         for i, frame in enumerate(frames):
             reduced.append(frames[i]-super_bias)
             reduced[i].name = "b_"+frames[i].name
@@ -206,8 +170,8 @@ def main():
     exptime = int(reduced[0].header["EXPTIME"])
 
     if do_dark:
-        dark_path = f"SuperDark_{exptime}s.fits"
-        super_dark = Frame.from_fits(_CALIB_PATH/Path(dark_path))
+        dark_name = calib_config["dark_pattern"].replace("{exptime}",str(exptime))
+        super_dark = Frame.from_fits(os.path.join(CALIB_PATH,dark_name))
 
         print("Subtracting superdark")
         for i, frame in enumerate(reduced):
@@ -227,7 +191,8 @@ def main():
         print("Loading superflats")
         superflats = {}
         for filt in filters:
-            superflats[filt] = Frame.from_fits(_CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
+            filt_name = calib_config["flat_pattern"].replace("{filter}",filt)
+            superflats[filt] = Frame.from_fits(CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'))
 
         print("Subtracting superflats")
         for i, frame in enumerate(reduced):
@@ -274,7 +239,7 @@ def main():
         for frame in reduced:
             frame.write_fits(os.path.join(output_dir,frame.name+".fits"))
         print("Saved")
-        exit()
+        sys.exit(0)
 
     # if we haven't exited by this point, do alignment
     import alipy

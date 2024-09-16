@@ -14,3 +14,5 @@ py_in_dir = [os.path.splitext(f)[0] for f in os.listdir(os.path.dirname(__file__
 from_db = ["Product","PipelineRun","TaskRun","Metadata","ProductGroup","configure_db", "PipelineInputAssociation", "PrecursorProductAssociation", "ProductProductGroupAssociation", "SupersessorAssociation", "ProductMetadataAssociation", "product_query"]
 
 __all__ = ['pipeline_db'] + py_in_dir + from_db
+
+
