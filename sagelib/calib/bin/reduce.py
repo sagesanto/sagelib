@@ -195,7 +195,7 @@ def main():
         superflats = {}
         for filt in filters:
             filt_name = calib_config["flat_pattern"].replace("{filter}",filt)
-            superflats[filt] = Frame.from_fits(CALIB_PATH/Path(f'SuperNormFlat_{filt}.fits'), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+            superflats[filt] = Frame.from_fits(join(CALIB_PATH,filt_name), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
         print("Subtracting superflats")
         for i, frame in enumerate(reduced):
