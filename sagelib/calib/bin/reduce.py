@@ -63,6 +63,7 @@ def main():
     parser.add_argument("-a", "--align", action="store_true", help="perform alignment. will result in temporarily saving intermediate files. Will clear 'temp_align_dir' if it exists.")
     parser.add_argument("-w", "--wcs", action="store_true", help="(NOT IMPLEMENTED) perform wcs solving")
 
+    parser.add_argument("-o", "--overwrite", action="store_true", default=False, help="if output files with the same names in the same locations already exist, overwrite them. if this is not enabled, conflicting new/existing products will cause an error.")
     parser.add_argument("-i", "--intermediate", action="store_true", help="save intermediate files throughout process. will overwrite existing files that share the same name in the intermediate directory.")
 
     parser.add_argument("--ref_image_path", action="store", type=str,help="the path to the reference image to use for alignment. if not specified, will use the first image in the input directory")
@@ -70,6 +71,8 @@ def main():
     parser.add_argument("-v", "--visualize", action="store_true", default=True, help="show superstack when finished")
     
     parser.add_argument("-c", "--config", action="store", default=CALIB_CONFIG, help="optional configuration path. not necessary for most use-cases")
+    
+    parser.add_argument("-p", "--profile", action="store", default=None, help="profile in configuration file to use")
 
 
     args = parser.parse_args()
@@ -80,9 +83,12 @@ def main():
     do_bias = args.bias
     do_align = args.align
     do_wcs = args.wcs
+
+    overwrite = args.overwrite
     save_intermediate = args.intermediate
     ref_image_path = args.ref_image_path
     config_path = args.config  
+    profile = args.profile
     
     visualize = args.visualize
 
@@ -114,6 +120,12 @@ def main():
     os.chdir(CALIB_ROOT)
 
     calib_config = Config(config_path)  # config_path *can* be passed in by cmdline and defaults to CALIB_CONFIG if not provided
+    if profile is not None:
+        try:
+            calib_config.choose_profile(profile)
+        except Exception as e:
+            print(f"ERROR: Couldn't select profile {profile} from the config file at {calib_config}: {e}")
+            exit(1)
 
     CALIB_PATH = calib_config["calib_path"]
 
@@ -217,7 +229,7 @@ def main():
                 os.mkdir(os.path.join(reduced_dir,filt))
         print("Saving reduced frames.")
         for frame in reduced:
-            frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"),overwrite=True)
+            frame.write_fits(os.path.join(reduced_dir,frame.header["FILTER"],frame.name+".fits"),overwrite=overwrite)
         print("Saved")
     elif do_align and not save_intermediate:
             print("Saving frames in preparation for alignment")
@@ -278,7 +290,7 @@ def main():
                                 sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
                                 sigma_clip_func=np.ma.average)
         result_img.meta['combined'] = True
-        result_img.write(output_dir/Path(f'combined_{target_name}_{filt}.fits'),overwrite=True)
+        result_img.write(output_dir/Path(f'combined_{target_name}_{filt}.fits'),overwrite=overwrite)
         stacks.append(f'combined_{target_name}_{filt}.fits')
 
     # make one superstack
@@ -291,7 +303,7 @@ def main():
     super_stack.meta['combined'] = True
     super_stack.meta['FILTER'] = "all"
 
-    super_stack.write(output_dir/Path(f'{target_name}_superstack.fits'),overwrite=True)
+    super_stack.write(output_dir/Path(f'{target_name}_superstack.fits'),overwrite=overwrite)
 
     super_stack = Frame.from_fits(output_dir/Path(f'{target_name}_superstack.fits'), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
