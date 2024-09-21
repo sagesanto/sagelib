@@ -11,7 +11,7 @@ def main():
     with open(args.input_filename, 'r') as f:
         lines = f.readlines()
 
-    lines = ["\t\t"+l.replace('\n',' \\\\\n').replace(","," & ") for l in lines]
+    lines = ["\t\t"+l.replace('\n',' \\\\\n').replace("&","\&").replace("$","\$").replace("%","\%").replace(","," & ") for l in lines]
 
     with open(args.output_filename, 'w') as f:
         cs = "c" * (len(lines[0].split("&")))
@@ -22,6 +22,7 @@ def main():
         f.writelines(lines[0])
         f.write("    \\hline\n")
         f.writelines(lines[1:])
+        f.write("     \\\\\n")
         f.write("     \\bottomrule\n")
         f.write("    \\end{tabular*}\n")
         f.write("    \\caption{Caption here}\n")
