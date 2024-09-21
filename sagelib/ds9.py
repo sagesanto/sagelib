@@ -3,11 +3,8 @@ import astromatic_wrapper as aw
 from argparse import ArgumentParser
 import numpy as np
 from typing import Iterable, Any
-try:
-    from pipeline_utils import check_sextractor_flags, ldac_to_table
-except:
-    from .pipeline_utils import check_sextractor_flags, ldac_to_table
 
+from sagelib.pipeline.pipeline_utils import check_sextractor_flags, ldac_to_table
 # REGION RADIUS SHOULD BE A STRING WITH " in it (ARCSEC) IF PHYSICAL IS FALSE
 def df_to_ds9(df,outname,xname,yname,physical=False,region_radius=5,color="green",labels:Iterable[Any]=None):
     if not isinstance(region_radius,str) and not physical:
