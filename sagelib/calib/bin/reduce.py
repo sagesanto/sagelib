@@ -28,17 +28,39 @@ from sagelib import Frame, get_user_config_path
 from sagelib.utils import Config, findAllIn
 from sagelib.image_utils import read_ccddata_ls, show_img
 from sagelib.calib import CALIB_CONFIG
+from sagelib.calib.utils import format_flat_name, format_dark_name
 import sagelib.calib
 
 from os.path import join, abspath
 
 from photutils.utils import calc_total_error
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry
-#from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from photutils.detection import DAOStarFinder
+
+import glob
+import re
 
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 warnings.filterwarnings("ignore", category=utils.exceptions.AstropyDeprecationWarning)
+
+def _find_files(rootdir, pattern, recursive=False, regex=False):
+    paths = []
+    if regex:
+        match_all = "**/*" if recursive else "*"
+        paths = [str(p) for p in Path.glob(Path(rootdir),match_all) if not p.is_dir()]
+        paths = [p for p in paths if re.match(pattern,p)]
+    else:
+        pattern = "**/"+pattern if recursive else pattern
+        paths = [str(p) for p in Path.glob(Path(rootdir),pattern) if not p.is_dir()]
+    return paths
+
+def find_files(rootdir, pattern, recursive=False, regex=False):
+    try:
+        return _find_files(rootdir,pattern,recursive,regex)
+    except Exception as e:
+        print(f"ERROR: {'recursive' if recursive else ''} path search with {'regex' if regex else ''} pattern '{pattern}' failed")
+        print(repr(e))
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="Perform slicing, calibration, and alignment on input fits files. If no operations are specified, all will be performed.")
@@ -132,14 +154,18 @@ def main():
     FITS_DATE_FMT_IN = calib_config["date_format_in"]
     FITS_DATE_FMT_OUT = calib_config["date_format_out"]
 
-    filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
-    print(f"Found the following files as input: {', '.join(filenames)}")
+
+    # find the data to reduce
+    data_cfg = calib_config["data"]
+
+    filenames = find_files(raw_data_dir,data_cfg["pattern"],data_cfg["recursive_search"],data_cfg["regex"])
+    print(f"Found the following {len(filenames)} files to reduce: {', '.join(filenames)}")
 
     frames = []
     cubenames = []
     # slice any cubes - into what directory should these go? should we then move non-cube data to that folder too before proceeding?
     for f in filenames:
-        frame = Frame.from_fits(raw_data_dir/Path(f), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+        frame = Frame.from_fits(f, date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         d = frame.img.ndim
         if d > 2:
             cubenames.append(f)
@@ -157,13 +183,15 @@ def main():
                     raise ValueError("Can't reduce data that isn't 2 or 3 dimensional")
 
 
-    filenames = [f for f in os.listdir(raw_data_dir) if not f.startswith(".") and (f.endswith("fits") or f.endswith("fit"))]
+    filenames = find_files(raw_data_dir,data_cfg["pattern"],data_cfg["recursive_search"],data_cfg["regex"])
     filenames = [f for f in filenames if f not in cubenames] # we don't delete the cubes after we slice them so we need to be careful not to re-open them
-    filters = {}
+    filters = []
     for f in filenames:
         print(f"Opening {f}")
-        frame = Frame.from_fits(os.path.join(raw_data_dir,f), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+        frame = Frame.from_fits(f, date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         frames.append(frame)
+        filters.append(frame.header["FILTER"])
+    filters = list(set(filters))
 
     if not frames:
         print("No frames to process!")
@@ -171,8 +199,17 @@ def main():
 
     reduced = []
     if do_bias:
+        bias_cfg = calib_config["biases"]
+        biases = find_files(CALIB_PATH, bias_cfg["pattern"], bias_cfg["recursive_search"], bias_cfg["regex"])
+        if not biases:
+            print(f"ERROR: no biases found matching pattern '{bias_cfg['pattern']}'")
+            sys.exit(1)
+        if len(biases) > 1:
+            print(f"ERROR: more than one bias found matching pattern '{bias_cfg['pattern']}'")
+            sys.exit(1)
+        bias_path = biases[0]
         print("Subtracting superbias")
-        super_bias = Frame.from_fits(os.path.join(CALIB_PATH,calib_config["bias_pattern"]), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+        super_bias = Frame.from_fits(bias_path, date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
         for i, frame in enumerate(frames):
             reduced.append(frames[i]-super_bias)
             reduced[i].name = "b_"+frames[i].name
@@ -181,12 +218,23 @@ def main():
     if not reduced:
         reduced = frames
 
-    # all images must have the same exposure time!!!
+    # TODO: calibrate each unique exposure time separately?
+    # for now, all images must have the same exposure time!!!
     exptime = int(reduced[0].header["EXPTIME"])
 
     if do_dark:
-        dark_name = calib_config["dark_pattern"].replace("{exptime}",str(exptime))
-        super_dark = Frame.from_fits(os.path.join(CALIB_PATH,dark_name), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+        dark_cfg = calib_config["darks"]
+        dark_pattern = format_dark_name(calib_config,exptime)
+        darks = find_files(CALIB_PATH, dark_pattern, dark_cfg["recursive_search"], dark_cfg["regex"])
+        if not darks:
+            print(f"ERROR: no darks found matching pattern '{dark_pattern}'")
+            sys.exit(1)
+        if len(darks) > 1:
+            print(f"ERROR: more than one dark found matching pattern '{dark_pattern}'")
+            sys.exit(1)
+        dark_path = darks[0]
+  
+        super_dark = Frame.from_fits(dark_path, date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
         print("Subtracting superdark")
         for i, frame in enumerate(reduced):
@@ -197,17 +245,21 @@ def main():
     if not reduced:
         reduced = frames
 
-    filters = []
-    for frame in reduced:
-        filters.append(frame.header["FILTER"])
-    filters = list(set(filters))
-
     if do_flat:
         print("Loading superflats")
         superflats = {}
+        flat_cfg = calib_config["flats"]
         for filt in filters:
-            filt_name = calib_config["flat_pattern"].replace("{filter}",filt)
-            superflats[filt] = Frame.from_fits(join(CALIB_PATH,filt_name), date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
+            flat_pattern = format_flat_name(calib_config,filt)
+            flats = find_files(CALIB_PATH, flat_pattern, flat_cfg["recursive_search"], flat_cfg["regex"])
+            if not flats:
+                print(f"ERROR: no flats found matching pattern '{flat_pattern}'")
+                sys.exit(1)
+            if len(flats) > 1:
+                print(f"ERROR: more than one flat found matching pattern '{flat_pattern}'")
+                sys.exit(1)
+            flat_path = flats[0]
+            superflats[filt] = Frame.from_fits(flat_path, date_format_in=FITS_DATE_FMT_IN, date_format_out=FITS_DATE_FMT_OUT)
 
         print("Subtracting superflats")
         for i, frame in enumerate(reduced):

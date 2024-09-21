@@ -15,7 +15,7 @@ without having to rebuild the package
 # do setup
 setup(
     name="sagelib",
-    version='0.0.1',
+    version="0.0.2",
     description='Astro Utilities',
     author='Sage Santomenna',
     author_email='sage.santomenna@gmail.com',
@@ -23,7 +23,7 @@ setup(
     package_data={
         'sagelib': ['config/logging.json']
     },
-    install_requires=['astropy','numpy','sqlalchemy','matplotlib','networkx','pandas','pytz','scipy','colorlog','tomlkit'],
+    install_requires=['astropy','numpy','sqlalchemy','matplotlib','networkx','pandas','pytz','scipy','colorlog','tomlkit', 'sqlite3'],
     entry_points={
         'console_scripts': [
             'csv_to_latex = sagelib.bin.csv_to_latex:main',
