@@ -1,3 +1,6 @@
+# Sage Santomenna 2024
+# utilities for observing. many of these are poorly written - it's mostly just a collection of functions that i've found useful in the past.
+
 import math
 from astral import sun
 from astral import LocationInfo
@@ -11,23 +14,23 @@ from astropy.io import ascii
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
 from datetime import datetime, timedelta, timezone
-from datetime import UTC as dtUTC
+#from datetime import UTC as dtUTC 
 from astropy.time import Time
 import pytz
-try:
-    from . import utils
-except:
-    import sagelib.utils as utils
-# util re-exports
-current_dt_utc = utils.current_dt_utc
+from pytz import UTC as dtUTC
 
-
-# globals
 
 # dec_vertices = [item for key in horizonBox.keys() for item in key]  # this is just a list of integers, each being one member of one
 
 sidereal_rate = 360 / (23 * 3600 + 56 * 60 + 4.091)  # deg/second
 
+
+def current_dt_utc():
+    return datetime.utcnow().replace(tzinfo=dtUTC)
+   # return datetime.now(dtUTC)
+
+def file_timestamp():
+    return current_dt_utc().strftime("%Y%m%d_%H_%M")
 
 def get_current_sidereal_time(locationInfo):
     now = current_dt_utc().replace(second=0, microsecond=0)
@@ -74,6 +77,7 @@ def siderealToDate(siderealAngle: Angle, current_sidereal_time: Angle):
 
 
 def dateToSidereal(dt: datetime, current_sidereal_time):
+    """Apply an offset to get a sidereal time from a datetime object, using the current sidereal time as a reference. Assumes the current sidereal time is, in fact, current."""
     timeDiff = dt.astimezone(dtUTC) - current_dt_utc()
     sidereal_factor = 1.0027
     st = current_sidereal_time + Angle(str(timeDiff.total_seconds() * sidereal_factor / 3600) + "h")
@@ -81,12 +85,12 @@ def dateToSidereal(dt: datetime, current_sidereal_time):
     return st
 
 
-def toDecimal(angle: Angle):
-    """!
-    Return the decimal degree representation of an astropy Angle, as a float
-    @return: Decimal degree representation, float
-    """
-    return round(float(angle.degree), 6)  # ew
+# def toDecimal(angle: Angle):
+#     """!
+#     Return the decimal degree representation of an astropy Angle, as a float
+#     @return: Decimal degree representation, float
+#     """
+#     return round(float(angle.degree), 6)  # ew
 
 
 def ensureFloat(angle):
@@ -103,8 +107,10 @@ def ensureFloat(angle):
         pass
     if isinstance(angle, float):
         return angle
-    if isinstance(angle, Angle):
-        return toDecimal(angle)
+    if isinstance(angle,u.Quantity):
+        return angle.to_value("degree")
+    # if isinstance(angle, Angle):
+    #     return toDecimal(angle)
     else:
         return float(angle)
 
@@ -179,11 +185,10 @@ def get_centroid(points):
     return centroid_x, centroid_y
 
 # get hour angle as an Angle
-def get_hour_angle(ra, dt, current_sidereal_time):
+def get_hour_angle(ra:Angle, dt, current_sidereal_time):
     sidereal = dateToSidereal(dt, current_sidereal_time)
     # print(sidereal, ra)
-    # print(type(sidereal), type(ra))
-    return Angle(wrap_around((sidereal - ra).deg), unit=u.deg)
+    return Angle(wrap_around((sidereal - ensureAngle(ra)).deg), unit=u.deg)
 
 
 def jd_to_dt(hjd):

@@ -23,7 +23,7 @@ setup(
     package_data={
         'sagelib': ['config/logging.json']
     },
-    install_requires=['astropy','numpy','sqlalchemy','matplotlib','networkx','pandas','pytz','scipy','colorlog','tomlkit', 'sqlite3'],
+    install_requires=['astropy','numpy','sqlalchemy','matplotlib','networkx','pandas','pytz','scipy','colorlog','tomlkit', 'astral'],
     entry_points={
         'console_scripts': [
             'csv_to_latex = sagelib.bin.csv_to_latex:main',

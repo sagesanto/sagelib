@@ -1,8 +1,9 @@
+# Sage Santomenna 2024
+# TMO-specific utilities. relies on observing_utils.py
+
 import os
-# to run the main function, need to uncomment this line:
+# from observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate, current_dt_utc
 from sagelib.observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate, current_dt_utc
-# and comment out this one:
-# from sagelib.observing_utils import get_angle, get_centroid, get_current_sidereal_time, dateToSidereal, find_transit_time, get_sunrise_sunset, get_hour_angle, angleToTimedelta, ensureFloat, ensureAngle, wrap_around, sidereal_rate, current_dt_utc
 import pytz, time
 from datetime import datetime, timedelta, timezone
 from astral import sun, LocationInfo
@@ -10,6 +11,9 @@ from astropy.coordinates import Angle
 from astropy.table import Table, QTable
 import astropy.units as u
 import matplotlib.pyplot as plt, numpy as np
+import logging
+
+BBOX_BUFFER_DEG = 20/60 # 20 arcmin
 
 HORIZON_BOX = {  # {tuple(decWindow):tuple(minAlt,maxAlt)}
     (-35, -34): (-35, 42.6104),
@@ -25,9 +29,17 @@ HORIZON_BOX = {  # {tuple(decWindow):tuple(minAlt,maxAlt)}
     (56, 65): (-30, 60)
 }
 
-# flip the sign of the altitudes (second tuple) and their order in HORIZON_BOX to represent flipping the telescope
+#christ this is ugly
+HORIZON_BOX_2 = HORIZON_BOX.copy()
+for k,v in HORIZON_BOX.items():
+    v1 = (v[0]/abs(v[0]) * (abs(v[0])-BBOX_BUFFER_DEG), v[1]/abs(v[1]) * (abs(v[1])-BBOX_BUFFER_DEG))
+    HORIZON_BOX_2[k] = v1
+HORIZON_BOX = HORIZON_BOX_2
+
+# flip the sign of the HA (second tuple) and their order in HORIZON_BOX to represent flipping the telescope
 FLIP_BOX = {k:(-v[1],-v[0]) for k,v in HORIZON_BOX.items()}
-print(FLIP_BOX)
+# print(FLIP_BOX)
+
 # does this work??
 def vertices_to_x_and_y(vertices):
     # take a list of tuples and return two lists, one of the x coords and one of the y coords
@@ -49,6 +61,9 @@ class TMO:
         self._dec_vertices.sort()
         self.horizon_box_vertices = self.get_horizon_box_vertices()
     
+    def get_current_tmo_sidereal_time(self):
+        return get_current_sidereal_time(self.locationInfo)
+
     def get_hour_angle_limits(self,dec):
         """
         Get the hour angle limits of the target's observability window based on its dec.
@@ -74,7 +89,7 @@ class TMO:
         @return: [startTime, endTime]
         @rtype: list(datetime)
         """
-        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
+        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else self.get_current_tmo_sidereal_time()
 
         target_dt = target_dt or current_dt_utc()
         t = find_transit_time(ensureAngle(RA), self.locationInfo, current_sidereal_time=current_sidereal_time,
@@ -83,18 +98,19 @@ class TMO:
         return [t + a for a in time_window]
         # HA = ST - RA -> ST = HA + RA
 
-    def get_sunrise_sunset(self, dt=current_dt_utc(), jd=False):
+    def get_sunrise_sunset(self, dt=None, jd=False):
         """!
         get sunrise and sunset for TMO
         @return: sunriseUTC, sunsetUTC
         @rtype: datetime.datetime
         """
+        dt = dt or current_dt_utc()
         return get_sunrise_sunset(self.locationInfo, dt=dt, jd=jd)
     
     def get_RA_window(self, target_dt, dec, ra=None, current_sidereal_time=None):
         # get the bounding RA coordinates of the TMO observability window for time target_dt for targets at declination dec. Optionally, input an RA to also get out that RA, adjusted for box-shifting
 
-        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
+        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else self.get_current_tmo_sidereal_time()
         adjusted_ra = ra.copy() if ra is not None else None
         hourAngleWindow = self.get_hour_angle_limits(dec)
         if not hourAngleWindow: return False
@@ -136,31 +152,43 @@ class TMO:
 
         return ordered_vertices
 
-    def observation_viable(self, dt: datetime, ra: Angle, dec: Angle, current_sidereal_time=None):
+    def observation_viable(self, dt: datetime, ra: Angle, dec: Angle, current_sidereal_time=None, ignore_night=False, debug=False, dbg_not_obs = False):
         """
         Can a target with RA ra and Dec dec be observed at time dt? Checks hour angle limits based on TMO bounding box.
         @return: bool
         """
-        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
+        logger = logging.getLogger(__name__)
+        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else self.get_current_tmo_sidereal_time()
         HA_window = self.get_hour_angle_limits(dec)
+        if not HA_window:
+            return False
         HA = get_hour_angle(ra, dt, current_sidereal_time)
         night_time = self.is_at_night(dt)
         # NOTE THE ORDER:
         # if self.flipped_box:
         #     return HA.is_within_bounds(HA_window[1], HA_window[0]) and night_time
-        return HA.is_within_bounds(HA_window[0], HA_window[1]) and night_time
+        obs_viable = HA.is_within_bounds(HA_window[0], HA_window[1]) and (night_time or ignore_night)
+        if dbg_not_obs and not obs_viable:
+            logger.info(f"[Observability Calculation] RA: {ra}, Dec: {dec}, HA: {HA}, HA Window: {HA_window}, Night: {night_time}, Obs time: {dt}, Obs LST: {dateToSidereal(dt,current_sidereal_time)}, Viable: {obs_viable}")
+        elif debug:
+            logger.info(f"[Observability Calculation] RA: {ra}, Dec: {dec}, HA: {HA}, HA Window: {HA_window}, Night: {night_time}, Viable: {obs_viable}")
+        return obs_viable
     
     def is_at_night(self,dt:datetime):
         """ Is it night at TMO at time dt?"""
         sunrise, sunset = self.get_sunrise_sunset(dt)
         return sunset < dt < sunrise
 
-    def observability_mask(self,table:QTable,current_sidereal_time=None,ra_column="ra",dec_column="dec",dt_column="dt"):
-        """ Take a table of candidates and return a mask of which ones are observable at the current time"""
-        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else get_current_sidereal_time(self.locationInfo)
+    def observability_mask(self,table:QTable,current_sidereal_time=None,ra_column="ra",dec_column="dec",dt_or_column="dt", ignore_night=False):
+        """ Take a table of candidates and return a mask of which ones are observable at the given time (or times if dt_or_column is the name of a column)"""
+        current_sidereal_time = current_sidereal_time if current_sidereal_time is not None else self.get_current_tmo_sidereal_time()
         mask = np.zeros(len(table),dtype=bool)
         for i,row in enumerate(table):
-            mask[i] = self.observation_viable(row[dt_column],row[ra_column],row[dec_column],current_sidereal_time=current_sidereal_time)
+            if isinstance(dt_or_column,str):
+                dt = row[dt_or_column]
+            else:
+                dt = dt_or_column
+            mask[i] = self.observation_viable(dt,row[ra_column],row[dec_column],current_sidereal_time=current_sidereal_time,ignore_night=ignore_night)
         return mask
 
     def plot_onsky(self, dt=current_dt_utc(),candidates=None,current_sidereal_time=None, fig=None, ax=None):
@@ -170,7 +198,6 @@ class TMO:
         sidereal = dateToSidereal(dt, current_sidereal_time)
         names = [c.CandidateName for c in candidates]
         ras = [c.RA for c in candidates]
-        # print("RA type:",type(ras[0]))
         decs = [c.Dec for c in candidates]
         table = QTable([names,ras,decs],names=["name","RA","Dec"])
         # calculate hour angles
@@ -180,7 +207,7 @@ class TMO:
         table["HA"] = [get_hour_angle(ra,dt,current_sidereal_time).deg for ra in table["RA"]]
         # print("Table HA:",table["HA"])
         # make column indicating which targets are observable
-        # this line used to look for obs viable at dt-timedelta(day=1):
+        # this line used to look for obs viable at dt-timedelta(day=1), not sure why:
         table["Observable"] = [self.observation_viable(dt,Angle(row["RA"],unit='deg'),Angle(row["Dec"],unit='deg'), current_sidereal_time=current_sidereal_time) for row in table]
 
         x,y = vertices_to_x_and_y(self.horizon_box_vertices)
@@ -231,10 +258,9 @@ class TMO:
 
             for i, row in enumerate(data):
                 artists.append(ax.scatter(row["HA"], row["Dec"], c=[colors[i]], label=row["name"],s=10))
-                # print("HA:",row["HA"])
             artists_ls.append(artists)
             fig_ax_pairs.append((fig,ax))
-        return fig_ax_pairs, artists_ls
+        return fig_ax_pairs, artists_ls, tables
     
 if __name__ == "__main__":
     class Candidate:
